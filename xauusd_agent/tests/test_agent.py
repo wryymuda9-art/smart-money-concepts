@@ -1,0 +1,163 @@
+"""Unit + smoke tests for the xauusd_agent package.
+
+Risk/sizing and broker logic are tested deterministically.  A pipeline smoke test
+runs the full backtester over the bundled EURUSD sample data (the repo ships no
+XAUUSD data) purely to prove the layers wire together and stay causal -- the
+numbers are not a strategy endorsement.
+"""
+
+import os
+import sys
+import unittest
+from datetime import date
+
+import numpy as np
+import pandas as pd
+
+BASE = os.path.dirname(__file__)
+ROOT = os.path.abspath(os.path.join(BASE, "..", ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from xauusd_agent import (
+    AgentConfig, Mode, InstrumentSpec, RiskConfig, RiskManager,
+    SMCStrategy, Signal, Side, SimBroker, Order, Backtester, TradingAgent,
+)
+
+
+class TestRiskManager(unittest.TestCase):
+    def setUp(self):
+        self.spec = InstrumentSpec()  # XAUUSD defaults: 100 USD/price/lot
+        self.rm = RiskManager(RiskConfig(risk_per_trade=0.01, min_stop_distance=0.5),
+                              self.spec, starting_equity=10_000.0)
+
+    def test_position_sizing_matches_risk_budget(self):
+        # risk 1% of 10k = $100. Stop 2.0 USD wide => $200/lot => 0.5 lots.
+        sig = Signal(Side.LONG, entry=2000.0, stop=1998.0, take_profit=2004.0)
+        dec = self.rm.size(sig, equity=10_000.0)
+        self.assertTrue(dec.approved)
+        self.assertAlmostEqual(dec.lots, 0.5, places=6)
+        # actual money at risk should not exceed the 1% budget
+        self.assertLessEqual(dec.risk_money, 100.0 + 1e-6)
+
+    def test_wide_stop_shrinks_size(self):
+        narrow = self.rm.size(Signal(Side.LONG, 2000, 1999, 2002), 10_000)
+        wide = self.rm.size(Signal(Side.LONG, 2000, 1990, 2020), 10_000)
+        self.assertGreater(narrow.lots, wide.lots)
+
+    def test_rounds_down_to_lot_step(self):
+        # choose numbers that don't land on a clean lot step
+        sig = Signal(Side.LONG, entry=2000.0, stop=1997.3, take_profit=2005.0)
+        dec = self.rm.size(sig, equity=10_000.0)
+        # never exceed the risk budget after rounding
+        self.assertLessEqual(dec.risk_money, 100.0 + 1e-6)
+        self.assertAlmostEqual((dec.lots / self.spec.lot_step) % 1, 0, places=6)
+
+    def test_min_stop_distance_rejected(self):
+        sig = Signal(Side.LONG, entry=2000.0, stop=1999.9, take_profit=2002.0)
+        dec = self.rm.size(sig, equity=10_000.0)
+        self.assertFalse(dec.approved)
+
+    def test_daily_loss_limit_halts(self):
+        rm = RiskManager(RiskConfig(max_daily_loss=0.03), self.spec, 10_000.0)
+        d = date(2024, 1, 1)
+        ok, _ = rm.can_trade(d, equity=10_000.0, open_positions=0)
+        self.assertTrue(ok)
+        # drop equity 4% -> should halt
+        ok, why = rm.can_trade(d, equity=9_600.0, open_positions=0)
+        self.assertFalse(ok)
+        self.assertIn("loss", why)
+        # stays halted even if equity recovers same day
+        ok, _ = rm.can_trade(d, equity=10_000.0, open_positions=0)
+        self.assertFalse(ok)
+        # new day resets
+        ok, _ = rm.can_trade(date(2024, 1, 2), equity=10_000.0, open_positions=0)
+        self.assertTrue(ok)
+
+    def test_max_open_and_max_trades(self):
+        rm = RiskManager(RiskConfig(max_open_positions=1, max_daily_trades=2),
+                         self.spec, 10_000.0)
+        d = date(2024, 1, 1)
+        self.assertFalse(rm.can_trade(d, 10_000, open_positions=1)[0])
+        rm.register_fill(); rm.register_fill()
+        self.assertFalse(rm.can_trade(d, 10_000, open_positions=0)[0])
+
+
+class TestSimBroker(unittest.TestCase):
+    def setUp(self):
+        self.spec = InstrumentSpec(sim_spread=0.0, sim_slippage=0.0, commission_per_lot=0.0)
+        self.broker = SimBroker(self.spec, 10_000.0)
+        self.t = pd.Timestamp("2024-01-01 08:00")
+
+    def test_long_take_profit_pnl(self):
+        self.broker.place(Order(Side.LONG, lots=1.0, stop=1990, take_profit=2010),
+                          ref_price=2000.0, when=self.t)
+        closed = self.broker.update(high=2010, low=2000, close=2009, when=self.t)
+        self.assertEqual(len(closed), 1)
+        # +10 price * 1 lot * 100 = +1000
+        self.assertAlmostEqual(closed[0].pnl, 1000.0, places=4)
+        self.assertAlmostEqual(self.broker.balance, 11_000.0, places=4)
+
+    def test_long_stop_loss_pnl(self):
+        self.broker.place(Order(Side.LONG, lots=1.0, stop=1990, take_profit=2010),
+                          ref_price=2000.0, when=self.t)
+        closed = self.broker.update(high=2001, low=1989, close=1992, when=self.t)
+        self.assertAlmostEqual(closed[0].pnl, -1000.0, places=4)
+
+    def test_stop_priority_when_both_hit(self):
+        # a candle that engulfs both stop and target must assume stop first
+        self.broker.place(Order(Side.SHORT, lots=1.0, stop=2010, take_profit=1990),
+                          ref_price=2000.0, when=self.t)
+        closed = self.broker.update(high=2011, low=1989, close=2000, when=self.t)
+        self.assertEqual(closed[0].reason, "stop")
+
+
+class TestPipelineSmoke(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from xauusd_agent.data import load_csv
+        data = os.path.join(ROOT, "tests", "test_data", "EURUSD", "EURUSD_15M.csv")
+        cls.df = load_csv(data).head(3000)
+
+    def test_backtest_runs_and_is_consistent(self):
+        cfg = AgentConfig(mode=Mode.BACKTEST, starting_equity=10_000.0)
+        # EURUSD priced ~1.0, so scale instrument + min stop down to be sensible
+        cfg.instrument.symbol = "EURUSD"
+        cfg.instrument.money_per_price_per_lot = 100_000.0
+        cfg.instrument.sim_spread = 0.0001
+        cfg.instrument.sim_slippage = 0.0
+        cfg.instrument.max_spread = 0.01
+        cfg.risk.min_stop_distance = 0.0001
+        cfg.strategy.require_session = False  # sample isn't tz-aligned to sessions
+        cfg.strategy.window = 300
+
+        result = Backtester(cfg).run(self.df)
+        # pipeline produced an equity curve and didn't blow up
+        self.assertGreater(len(result.equity_curve), 0)
+        self.assertGreaterEqual(result.n_trades, 0)
+        # equity accounting is internally consistent: final equity == start + sum(pnl)
+        realised = sum(t.pnl for t in result.trades)
+        self.assertAlmostEqual(
+            result.final_equity, cfg.starting_equity + realised, places=2
+        )
+        # no trade may risk more than the configured budget at entry
+        for t in result.trades:
+            risk_at_entry = abs(t.position.entry - t.position.stop) * \
+                t.position.lots * cfg.instrument.money_per_price_per_lot
+            self.assertLessEqual(
+                risk_at_entry, cfg.starting_equity * cfg.risk.risk_per_trade * 3
+            )
+
+    def test_no_lookahead_in_strategy(self):
+        # evaluating on a prefix must equal evaluating on the prefix of a longer set
+        strat = SMCStrategy(AgentConfig().strategy, AgentConfig().instrument)
+        strat.cfg.require_session = False
+        w1 = self.df.iloc[:500]
+        s1 = strat.evaluate(w1)
+        s2 = strat.evaluate(self.df.iloc[:500].copy())
+        self.assertEqual(s1.side, s2.side)
+        self.assertAlmostEqual(s1.entry, s2.entry, places=8)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

@@ -1,0 +1,117 @@
+"""Top-level orchestrator.
+
+``TradingAgent`` is the single object an application interacts with.  In
+BACKTEST mode it delegates to :class:`Backtester`.  In PAPER / LIVE mode it
+exposes :meth:`step`, which you call once per closed candle with the latest
+trailing window; the agent runs the same Strategy -> Risk -> Broker pipeline.
+
+LIVE is opt-in and guarded: you must pass a connected ``Mt5Broker`` and set
+``config.mode = Mode.LIVE`` yourself.  Nothing here connects to a real account on
+its own.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from typing import Optional
+
+import pandas as pd
+
+from .config import AgentConfig, Mode
+from .strategy import SMCStrategy, Signal, Side
+from .risk import RiskManager
+from .broker import SimBroker, Mt5Broker, Order
+from .backtest import Backtester, BacktestResult
+
+
+@dataclass
+class StepResult:
+    signal: Signal
+    acted: bool
+    reason: str
+    lots: float = 0.0
+
+
+class TradingAgent:
+    def __init__(self, config: AgentConfig, broker=None):
+        self.config = config
+        self.strategy = SMCStrategy(config.strategy, config.instrument)
+        self.risk = RiskManager(
+            config.risk, config.instrument, starting_equity=config.starting_equity
+        )
+        if broker is not None:
+            self.broker = broker
+        elif config.mode is Mode.LIVE:
+            raise ValueError(
+                "Mode.LIVE requires an explicit connected broker, e.g. "
+                "TradingAgent(cfg, broker=Mt5Broker(cfg.instrument)). Refusing to "
+                "auto-create a live connection."
+            )
+        else:
+            self.broker = SimBroker(config.instrument, config.starting_equity)
+
+    # -- backtest ---------------------------------------------------------------
+
+    def backtest(self, ohlc: pd.DataFrame, progress_every: int = 0) -> BacktestResult:
+        bt = Backtester(self.config)
+        return bt.run(ohlc, progress_every=progress_every)
+
+    # -- live / paper step ------------------------------------------------------
+
+    def _equity(self, last_close: float) -> float:
+        if isinstance(self.broker, Mt5Broker):
+            return self.broker.account_equity()
+        return self.broker.equity(last_close)
+
+    def _open_count(self) -> int:
+        if isinstance(self.broker, Mt5Broker):
+            return self.broker.open_count()
+        return self.broker.open_count
+
+    def step(self, window: pd.DataFrame, when=None, spread: Optional[float] = None) -> StepResult:
+        """Evaluate the latest closed candle and act (paper or live)."""
+        when = when if when is not None else window.index[-1]
+        last_close = float(window["close"].iloc[-1])
+
+        # roll the sim broker's exits forward on the latest candle (paper only;
+        # the live broker manages SL/TP server-side)
+        if isinstance(self.broker, SimBroker):
+            self.broker.update(
+                float(window["high"].iloc[-1]),
+                float(window["low"].iloc[-1]),
+                last_close,
+                when,
+            )
+
+        signal = self.strategy.evaluate(window)
+        if not signal.is_trade:
+            return StepResult(signal, False, signal.reason)
+
+        today = pd.Timestamp(when).date()
+        equity = self._equity(last_close)
+        ok, why = self.risk.can_trade(today, equity, self._open_count())
+        if not ok:
+            return StepResult(signal, False, why)
+
+        spread = spread if spread is not None else self.config.instrument.sim_spread
+        if not self.risk.spread_ok(spread):
+            return StepResult(signal, False, "spread too wide")
+
+        sizing = self.risk.size(signal, equity)
+        if not sizing.approved:
+            return StepResult(signal, False, sizing.reason)
+
+        order = Order(
+            side=signal.side,
+            lots=sizing.lots,
+            stop=signal.stop,
+            take_profit=signal.take_profit,
+            comment=signal.reason,
+        )
+        if isinstance(self.broker, Mt5Broker):
+            self.broker.place(order)
+        else:
+            self.broker.place(order, ref_price=last_close, when=when)
+        self.risk.register_fill()
+        return StepResult(signal, True, "order placed", lots=sizing.lots)
