@@ -4,3 +4,8 @@ smartmoneyconcepts.egg-info
 .DS_Store
 __pycache__
 .venv
+# xauusd_agent generated dashboard artifacts
+xauusd_dashboard.html
+xauusd_dashboard.png
+*_dashboard.html
+*_dashboard.png
