@@ -159,5 +159,58 @@ class TestPipelineSmoke(unittest.TestCase):
         self.assertAlmostEqual(s1.entry, s2.entry, places=8)
 
 
+class TestCsvDataFeed(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from xauusd_agent.data import load_csv
+        data = os.path.join(ROOT, "tests", "test_data", "EURUSD", "EURUSD_15M.csv")
+        cls.df = load_csv(data).head(60)
+
+    def test_feed_advances_and_windows(self):
+        from xauusd_agent import CsvDataFeed
+        feed = CsvDataFeed(self.df, symbol="EURUSD", start_at=10)
+        # first available window ends at candle index 9 (start_at-1)
+        w = feed.latest_window(5)
+        self.assertEqual(len(w), 5)
+        self.assertTrue(w.index[-1] == self.df.index[9])
+        # advancing yields the next candle time and extends the window
+        ts = feed.wait_next_candle()
+        self.assertEqual(ts, self.df.index[10])
+        self.assertTrue(feed.latest_window(3).index[-1] == self.df.index[10])
+
+    def test_feed_exhausts(self):
+        from xauusd_agent import CsvDataFeed
+        feed = CsvDataFeed(self.df, symbol="EURUSD", start_at=len(self.df))
+        self.assertIsNone(feed.wait_next_candle())
+        self.assertTrue(feed.exhausted)
+
+
+class TestLiveLoopPaper(unittest.TestCase):
+    def test_run_live_paper_consistency(self):
+        from xauusd_agent import AgentConfig, Mode, CsvDataFeed
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.live import run_live
+        data = os.path.join(ROOT, "tests", "test_data", "EURUSD", "EURUSD_15M.csv")
+        df = load_csv(data).head(700)
+
+        cfg = AgentConfig(mode=Mode.PAPER, starting_equity=10_000.0)
+        cfg.instrument.symbol = "EURUSD"
+        cfg.instrument.money_per_price_per_lot = 100_000.0
+        cfg.instrument.sim_spread = 0.0
+        cfg.instrument.sim_slippage = 0.0
+        cfg.risk.min_stop_distance = 0.0001
+        cfg.strategy.require_session = False
+        cfg.strategy.require_fvg = False
+        cfg.strategy.window = 300
+
+        feed = CsvDataFeed(df, symbol="EURUSD", start_at=300)
+        # no dashboard -> no plotly/kaleido dependency in the test
+        agent = run_live(cfg, feed, dashboard=None, verbose=False)
+        # balance == start + realised pnl of closed trades
+        realised = sum(t.pnl for t in agent.broker.closed)
+        self.assertAlmostEqual(agent.broker.balance,
+                               cfg.starting_equity + realised, places=2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

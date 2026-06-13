@@ -46,69 +46,71 @@ def _format_volume(volume: float) -> str:
 
 # -- smc overlays (adapted from tests/generate_gif.py, made NaN/empty safe) -----
 
-def _add_fvg(fig, df, fvg):
+def _add_fvg(fig, xs, fvg):
+    n = len(xs)
     for i in range(len(fvg)):
         if np.isnan(fvg["FVG"][i]):
             continue
-        x1 = int(fvg["MitigatedIndex"][i] if fvg["MitigatedIndex"][i] != 0 else len(df) - 1)
-        fig.add_shape(type="rect", x0=df.index[i], y0=fvg["Top"][i],
-                      x1=df.index[x1], y1=fvg["Bottom"][i],
+        x1 = int(fvg["MitigatedIndex"][i] if fvg["MitigatedIndex"][i] != 0 else n - 1)
+        fig.add_shape(type="rect", x0=xs[i], y0=fvg["Top"][i],
+                      x1=xs[x1], y1=fvg["Bottom"][i],
                       line=dict(width=0), fillcolor="yellow", opacity=0.18)
 
 
-def _add_swings(fig, df, shl):
+def _add_swings(fig, xs, shl):
     idx = [i for i in range(len(shl)) if not np.isnan(shl["HighLow"][i])]
     for a, b in zip(idx, idx[1:]):
         color = "rgba(0,128,0,0.25)" if shl["HighLow"][a] == -1 else "rgba(255,0,0,0.25)"
-        fig.add_trace(go.Scatter(x=[df.index[a], df.index[b]],
+        fig.add_trace(go.Scatter(x=[xs[a], xs[b]],
                                  y=[shl["Level"][a], shl["Level"][b]],
                                  mode="lines", line=dict(color=color),
                                  hoverinfo="skip", showlegend=False))
 
 
-def _add_bos_choch(fig, df, data):
+def _add_bos_choch(fig, xs, data):
     for i in range(len(data)):
         for key, col in (("BOS", "rgba(255,165,0,0.5)"), ("CHOCH", "rgba(80,140,255,0.6)")):
             if np.isnan(data[key][i]):
                 continue
             broken = int(data["BrokenIndex"][i])
             lvl = data["Level"][i]
-            fig.add_trace(go.Scatter(x=[df.index[i], df.index[broken]], y=[lvl, lvl],
+            fig.add_trace(go.Scatter(x=[xs[i], xs[broken]], y=[lvl, lvl],
                                      mode="lines", line=dict(color=col),
                                      hoverinfo="skip", showlegend=False))
             mid = round((i + broken) / 2)
-            fig.add_trace(go.Scatter(x=[df.index[mid]], y=[lvl], mode="text", text=key,
+            fig.add_trace(go.Scatter(x=[xs[mid]], y=[lvl], mode="text", text=key,
                                      textposition="top center" if data[key][i] == 1 else "bottom center",
                                      textfont=dict(color=col, size=8),
                                      hoverinfo="skip", showlegend=False))
 
 
-def _add_ob(fig, df, ob):
+def _add_ob(fig, xs, ob):
+    n = len(xs)
     for i in range(len(ob)):
         if np.isnan(ob["OB"][i]) or ob["OB"][i] == 0:
             continue
         bull = ob["OB"][i] == 1
-        x1 = int(ob["MitigatedIndex"][i] if ob["MitigatedIndex"][i] != 0 else len(df) - 1)
-        fig.add_shape(type="rect", x0=df.index[i], y0=ob["Bottom"][i],
-                      x1=df.index[x1], y1=ob["Top"][i], line=dict(width=0),
+        x1 = int(ob["MitigatedIndex"][i] if ob["MitigatedIndex"][i] != 0 else n - 1)
+        fig.add_shape(type="rect", x0=xs[i], y0=ob["Bottom"][i],
+                      x1=xs[x1], y1=ob["Top"][i], line=dict(width=0),
                       fillcolor="rgba(0,160,80,0.18)" if bull else "rgba(160,0,40,0.18)")
-        xc = df.index[int(i + (x1 - i) / 2)]
+        xc = xs[int(i + (x1 - i) / 2)]
         yc = (ob["Bottom"][i] + ob["Top"][i]) / 2
         fig.add_annotation(x=xc, y=yc, text=f'OB: {_format_volume(ob["OBVolume"][i])} ({ob["Percentage"][i]:.1f}%)',
                            font=dict(color=GHOST, size=8), showarrow=False)
 
 
-def _add_liquidity(fig, df, liq):
+def _add_liquidity(fig, xs, liq):
     for i in range(len(liq)):
         if not np.isnan(liq["Liquidity"][i]):
             end = int(liq["End"][i])
-            fig.add_trace(go.Scatter(x=[df.index[i], df.index[end]],
+            fig.add_trace(go.Scatter(x=[xs[i], xs[end]],
                                      y=[liq["Level"][i], liq["Level"][i]], mode="lines",
                                      line=dict(color="rgba(255,165,0,0.3)"),
                                      hoverinfo="skip", showlegend=False))
 
 
-def _add_prev_hl(fig, df, phl):
+def _add_prev_hl(fig, xs, phl):
     def runs(col):
         lv, ix = [], []
         for i in range(len(col)):
@@ -118,28 +120,33 @@ def _add_prev_hl(fig, df, phl):
     for col, label, pos in (("PreviousHigh", "PH", "top center"), ("PreviousLow", "PL", "bottom center")):
         lv, ix = runs(phl[col])
         for a in range(len(ix) - 1):
-            fig.add_trace(go.Scatter(x=[df.index[ix[a]], df.index[ix[a + 1]]],
+            fig.add_trace(go.Scatter(x=[xs[ix[a]], xs[ix[a + 1]]],
                                      y=[lv[a], lv[a]], mode="lines",
                                      line=dict(color="rgba(255,255,255,0.2)"),
                                      hoverinfo="skip", showlegend=False))
-            fig.add_trace(go.Scatter(x=[df.index[ix[a + 1]]], y=[lv[a]], mode="text",
+            fig.add_trace(go.Scatter(x=[xs[ix[a + 1]]], y=[lv[a]], mode="text",
                                      text=label, textposition=pos,
                                      textfont=dict(color=GHOST, size=8),
                                      hoverinfo="skip", showlegend=False))
 
 
-def _add_sessions(fig, df, sess):
+def _add_sessions(fig, xs, sess):
     for i in range(len(sess) - 1):
         if sess["Active"][i] == 1:
-            fig.add_shape(type="rect", x0=df.index[i], y0=sess["Low"][i],
-                          x1=df.index[i + 1], y1=sess["High"][i],
+            fig.add_shape(type="rect", x0=xs[i], y0=sess["Low"][i],
+                          x1=xs[i + 1], y1=sess["High"][i],
                           line=dict(width=0), fillcolor="#16866E", opacity=0.12)
 
 
 # -- agent trade overlays -------------------------------------------------------
 
-def _add_trades(fig, df, positions: Sequence[Position], closed: Sequence[ClosedTrade]):
-    t0, t1 = df.index[0], df.index[-1]
+def _to_pydt(ts):
+    return pd.Timestamp(ts).to_pydatetime()
+
+
+def _add_trades(fig, xs, t0_ts, t1_ts, positions: Sequence[Position], closed: Sequence[ClosedTrade]):
+    t0, t1 = t0_ts, t1_ts          # pandas Timestamps for comparison
+    t1x = _to_pydt(t1_ts)          # python datetime for plotting the right edge
 
     def in_window(ts):
         return t0 <= pd.Timestamp(ts) <= t1
@@ -149,9 +156,10 @@ def _add_trades(fig, df, positions: Sequence[Position], closed: Sequence[ClosedT
         p = tr.position
         if not in_window(p.open_time):
             continue
-        x_end = pd.Timestamp(tr.close_time) if in_window(tr.close_time) else t1
+        x_end = _to_pydt(tr.close_time) if in_window(tr.close_time) else t1x
+        x_open = _to_pydt(p.open_time)
         long = p.side is Side.LONG
-        fig.add_trace(go.Scatter(x=[p.open_time], y=[p.entry], mode="markers",
+        fig.add_trace(go.Scatter(x=[x_open], y=[p.entry], mode="markers",
                                  marker=dict(symbol="triangle-up" if long else "triangle-down",
                                              size=11, color=UP if long else DOWN,
                                              line=dict(width=1, color="white")),
@@ -159,10 +167,10 @@ def _add_trades(fig, df, positions: Sequence[Position], closed: Sequence[ClosedT
                                  text=[f"{p.side.value} {p.lots:.2f} @ {p.entry:.2f}"],
                                  showlegend=False))
         # SL / TP spans
-        fig.add_trace(go.Scatter(x=[p.open_time, x_end], y=[p.stop, p.stop], mode="lines",
+        fig.add_trace(go.Scatter(x=[x_open, x_end], y=[p.stop, p.stop], mode="lines",
                                  line=dict(color="rgba(255,80,80,0.55)", dash="dot", width=1),
                                  hoverinfo="skip", showlegend=False))
-        fig.add_trace(go.Scatter(x=[p.open_time, x_end], y=[p.take_profit, p.take_profit], mode="lines",
+        fig.add_trace(go.Scatter(x=[x_open, x_end], y=[p.take_profit, p.take_profit], mode="lines",
                                  line=dict(color="rgba(80,255,140,0.55)", dash="dot", width=1),
                                  hoverinfo="skip", showlegend=False))
         win = tr.pnl > 0
@@ -175,17 +183,18 @@ def _add_trades(fig, df, positions: Sequence[Position], closed: Sequence[ClosedT
     for p in positions:
         if not in_window(p.open_time):
             continue
+        x_open = _to_pydt(p.open_time)
         long = p.side is Side.LONG
-        fig.add_trace(go.Scatter(x=[p.open_time], y=[p.entry], mode="markers",
+        fig.add_trace(go.Scatter(x=[x_open], y=[p.entry], mode="markers",
                                  marker=dict(symbol="triangle-up" if long else "triangle-down",
                                              size=12, color=UP if long else DOWN,
                                              line=dict(width=1.5, color="yellow")),
                                  hoverinfo="text", text=[f"OPEN {p.side.value} {p.lots:.2f} @ {p.entry:.2f}"],
                                  showlegend=False))
-        fig.add_trace(go.Scatter(x=[p.open_time, t1], y=[p.stop, p.stop], mode="lines",
+        fig.add_trace(go.Scatter(x=[x_open, t1x], y=[p.stop, p.stop], mode="lines",
                                  line=dict(color="rgba(255,80,80,0.8)", dash="dash", width=1.2),
                                  hoverinfo="skip", showlegend=False))
-        fig.add_trace(go.Scatter(x=[p.open_time, t1], y=[p.take_profit, p.take_profit], mode="lines",
+        fig.add_trace(go.Scatter(x=[x_open, t1x], y=[p.take_profit, p.take_profit], mode="lines",
                                  line=dict(color="rgba(80,255,140,0.8)", dash="dash", width=1.2),
                                  hoverinfo="skip", showlegend=False))
 
@@ -210,36 +219,38 @@ class DashboardConfig:
 def build_figure(window_df: pd.DataFrame, cfg: DashboardConfig,
                  positions: Sequence[Position] = (), closed: Sequence[ClosedTrade] = (),
                  header: str = "", title: str = "XAUUSD · SMC Agent") -> go.Figure:
-    df = window_df.reset_index(drop=False)
-    df = df.set_index(window_df.index)  # keep datetime index for x, RangeIndex for smc
+    # native python datetimes for the x-axis (kaleido/orjson can't encode pd.Timestamp)
+    xs = [t.to_pydatetime() for t in pd.DatetimeIndex(window_df.index)]
+    o, h, l, c = (window_df["open"].values, window_df["high"].values,
+                  window_df["low"].values, window_df["close"].values)
 
     fig = go.Figure(data=[go.Candlestick(
-        x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"],
+        x=xs, open=o, high=h, low=l, close=c,
         increasing_line_color=UP, decreasing_line_color=DOWN, name="price")])
 
     shl = smc.swing_highs_lows(window_df, swing_length=cfg.swing_length)
     if cfg.show_fvg:
-        _add_fvg(fig, df, smc.fvg(window_df, join_consecutive=True))
+        _add_fvg(fig, xs, smc.fvg(window_df, join_consecutive=True))
     if cfg.show_swings:
-        _add_swings(fig, df, shl)
+        _add_swings(fig, xs, shl)
     if cfg.show_bos_choch:
-        _add_bos_choch(fig, df, smc.bos_choch(window_df, shl))
+        _add_bos_choch(fig, xs, smc.bos_choch(window_df, shl))
     if cfg.show_ob:
-        _add_ob(fig, df, smc.ob(window_df, shl))
+        _add_ob(fig, xs, smc.ob(window_df, shl))
     if cfg.show_liquidity:
-        _add_liquidity(fig, df, smc.liquidity(window_df, shl))
+        _add_liquidity(fig, xs, smc.liquidity(window_df, shl))
     if cfg.show_prev_hl:
         try:
-            _add_prev_hl(fig, df, smc.previous_high_low(window_df, time_frame=cfg.prev_hl_timeframe))
+            _add_prev_hl(fig, xs, smc.previous_high_low(window_df, time_frame=cfg.prev_hl_timeframe))
         except Exception:
             pass
     if cfg.show_sessions:
         try:
-            _add_sessions(fig, df, smc.sessions(window_df, session="London"))
+            _add_sessions(fig, xs, smc.sessions(window_df, session="London"))
         except Exception:
             pass
 
-    _add_trades(fig, df, positions, closed)
+    _add_trades(fig, xs, window_df.index[0], window_df.index[-1], positions, closed)
 
     fig.update_layout(
         title=dict(text=title, x=0.01, font=dict(color="white", size=14)),

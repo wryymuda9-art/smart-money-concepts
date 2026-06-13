@@ -35,12 +35,30 @@ risk, or change broker without touching the others.
 |------|----------------|
 | `config.py` | All tunables as dataclasses (`AgentConfig`, `RiskConfig`, `StrategyConfig`, `InstrumentSpec`, `Mode`). |
 | `data.py` | Load & normalise OHLCV (MT5/generic CSV) → datetime-indexed, lowercase columns; causal window iterator. |
+| `feed.py` | `CsvDataFeed` (replay) and `Mt5DataFeed` (live bars via `copy_rates_*`, + history download). |
 | `strategy.py` | `SMCStrategy.evaluate(window) → Signal`. The ICT confluence logic. |
 | `risk.py` | `RiskManager`: fixed-fractional position sizing + daily-loss / max-trades / max-positions gates. |
 | `broker.py` | `SimBroker` (deterministic fills for test/paper) and `Mt5Broker` (live, lazy-imported). |
 | `backtest.py` | `Backtester` event loop + `BacktestResult` metrics (win rate, PF, expectancy, max DD…). |
+| `viz.py` | `LiveDashboard` — dark SMC candlestick chart (order blocks/FVG/liquidity/structure) + the agent's own trade overlays, written to a self-refreshing HTML/PNG. |
 | `agent.py` | `TradingAgent` top-level orchestrator; `backtest()` and per-candle `step()`. |
-| `cli.py` | `python -m xauusd_agent.cli backtest --csv ...` |
+| `live.py` | `run_live(config, feed, dashboard, broker)` real-time loop; `run_live_replay()` offline. |
+| `cli.py` | `backtest` / `dashboard` / `live` / `download` subcommands. |
+
+## Where the data comes from
+
+Everything consumes one shape: a datetime-indexed `open/high/low/close/volume`
+DataFrame (`data.normalise_ohlc`). A **feed** supplies it:
+
+| Mode | Feed | Source |
+|------|------|--------|
+| Backtest / Paper | `CsvDataFeed` | a CSV on disk (`load_csv`) |
+| **Live** | `Mt5DataFeed` | the **MT5 terminal** via `MetaTrader5.copy_rates_*` |
+
+The agent runs as a normal Python process on your machine/VPS; **MT5 is the data
+*and* execution gateway it connects to** (it does not run inside MT5). `Mt5DataFeed`
+and `Mt5Broker` are lazy-imported, so the package stays runnable on Linux/macOS and
+only activates on a Windows host with an MT5 terminal.
 
 ## The strategy (ICT day-trade / scalp)
 
@@ -109,7 +127,39 @@ print(result)            # one-line summary
 print(result.summary())  # dict of metrics
 ```
 
-### Paper / live (MetaTrader 5)
+### Live dashboard (visual)
+
+Replay candles into the dark SMC chart (HTML auto-refreshes; PNG optional):
+
+```bash
+SMC_CREDIT=0 python -m xauusd_agent.cli dashboard \
+    --csv XAUUSD_M5.csv --html dash.html --png dash.png --plot-window 130
+# open dash.html in a browser to watch it update
+```
+
+The chart shows order blocks, FVGs, liquidity, swing structure and BOS/CHoCH,
+plus the agent's own activity: ▲/▼ entry markers, dashed take-profit / stop-loss
+lines, exit markers coloured by win/loss, and a header with equity / open PnL /
+win-rate. Works in backtest-replay, paper and live modes.
+
+### Download XAUUSD history from MT5 (Windows + terminal)
+
+```bash
+python -m xauusd_agent.cli download --symbol XAUUSD --timeframe M5 \
+    --start 2024-01-01 --end 2024-06-01 --out XAUUSD_M5.csv
+```
+
+### Run on live MT5 data
+
+```bash
+# PAPER: read live MT5 bars, simulate fills, no orders sent (safe default)
+python -m xauusd_agent.cli live --symbol XAUUSD --timeframe M5 --html dash.html
+
+# LIVE: actually place orders via MT5 (explicit opt-in)
+python -m xauusd_agent.cli live --symbol XAUUSD --timeframe M5 --execute
+```
+
+### Paper / live (MetaTrader 5, Python API)
 
 MT5's Python bindings are Windows-only; `Mt5Broker` is imported lazily so the rest
 of the package works anywhere. Live is **opt-in** and never auto-connects.
@@ -145,9 +195,20 @@ pipeline smoke test runs over the bundled EURUSD sample (the repo ships no XAUUS
 data) purely to prove the layers wire together — the numbers are not a strategy
 endorsement.
 
+## Optional dependencies
+
+The core (backtest/paper) needs only `pandas`, `numpy`, `numba` (already required
+by `smartmoneyconcepts`). Extra features:
+
+- **Dashboard**: `pip install plotly kaleido` (PNG export also needs Chrome:
+  `plotly_get_chrome`). HTML output needs only plotly.
+- **Live / data download**: `pip install MetaTrader5` on a Windows host.
+
 ## Roadmap / what to add next
 
-- Live XAUUSD data ingestion (MT5 `copy_rates_*`) and a scheduling loop.
+- ✅ Live XAUUSD data ingestion (MT5 `copy_rates_*`) + real-time loop (`feed.py`, `live.py`).
+- ✅ Visual live dashboard (`viz.py`).
+- Liquidity-**sweep** entry trigger (sweep → CHoCH → OB tap) and multi-timeframe bias.
 - Walk-forward optimisation and parameter sweeps over the confluence toggles.
 - Trailing stops / partial take-profits / break-even moves.
 - Per-session and per-day-of-week performance attribution.

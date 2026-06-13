@@ -30,7 +30,8 @@ from .broker import SimBroker, Order, Position, OrderType
 from .backtest import Backtester, BacktestResult
 from .agent import TradingAgent
 from .viz import LiveDashboard, DashboardConfig, build_figure
-from .live import run_live_replay
+from .feed import CsvDataFeed, Mt5DataFeed
+from .live import run_live, run_live_replay
 
 __all__ = [
     "AgentConfig",
@@ -52,6 +53,9 @@ __all__ = [
     "LiveDashboard",
     "DashboardConfig",
     "build_figure",
+    "CsvDataFeed",
+    "Mt5DataFeed",
+    "run_live",
     "run_live_replay",
 ]
 

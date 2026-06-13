@@ -1,13 +1,15 @@
-"""Drive the agent candle-by-candle and feed a live dashboard.
+"""Drive the agent from a data feed and refresh the live dashboard.
 
-``run_live_replay`` replays historical candles as if they were arriving in
-real time: for each new closed candle it advances the paper agent one step
-(updating positions, triggering stops/targets, possibly opening a trade) and
-re-renders the :class:`~xauusd_agent.viz.LiveDashboard`.
+``run_live`` is the single real-time loop used by both paper and live trading:
 
-The exact same loop works against real data — swap the historical iterator for a
-broker/data feed that yields the latest candle, and point the agent at an
-``Mt5Broker`` for live execution.
+    every new closed candle:
+        window = feed.latest_window(strategy.window)   # read bars
+        agent.step(window)                             # decide + size + (maybe) order
+        dashboard.update(...)                          # redraw chart
+
+Point ``feed`` at a :class:`~xauusd_agent.feed.CsvDataFeed` for an offline
+replay, or an :class:`~xauusd_agent.feed.Mt5DataFeed` for real data; pass an
+``Mt5Broker`` to actually place orders. Nothing here connects on its own.
 """
 
 from __future__ import annotations
@@ -18,7 +20,81 @@ import pandas as pd
 
 from .config import AgentConfig
 from .agent import TradingAgent
-from .viz import LiveDashboard, DashboardConfig
+from .broker import SimBroker
+from .feed import CsvDataFeed
+from .viz import LiveDashboard
+
+
+def run_live(
+    config: AgentConfig,
+    feed,
+    dashboard: Optional[LiveDashboard] = None,
+    *,
+    broker=None,
+    plot_window: int = 120,
+    render_every: int = 1,
+    png_path: Optional[str] = None,
+    png_every: int = 0,
+    max_candles: Optional[int] = None,
+    verbose: bool = True,
+) -> TradingAgent:
+    """Run the real-time loop against ``feed`` until it is exhausted/``max_candles``.
+
+    Returns the agent (inspect ``agent.broker`` for sim results).
+    """
+    agent = TradingAgent(config, broker=broker)
+    is_sim = isinstance(agent.broker, SimBroker)
+
+    processed = 0
+    rendered = 0
+    while True:
+        ts = feed.wait_next_candle()
+        if ts is None:
+            break
+
+        window = feed.latest_window(config.strategy.window)
+        if len(window) < max(3 * config.strategy.swing_length, 30):
+            continue
+
+        result = agent.step(window, when=ts)
+        if verbose and result.acted:
+            print(f"[{ts}] {result.signal.side.value.upper()} "
+                  f"{result.lots:.2f} lots — {result.signal.reason}")
+
+        if dashboard is not None and processed % render_every == 0:
+            plot_df = window.tail(plot_window)
+            last_close = float(window["close"].iloc[-1])
+            if is_sim:
+                equity = agent.broker.equity(last_close)
+                positions, closed = agent.broker.positions, agent.broker.closed
+            else:
+                equity = agent._equity(last_close)
+                positions, closed = (), ()   # MT5 manages fills server-side
+            snap = png_path if (png_every and rendered % png_every == 0) else None
+            dashboard.update(plot_df, equity, config.starting_equity,
+                             positions, closed, png_path=snap)
+            rendered += 1
+
+        processed += 1
+        if max_candles is not None and processed >= max_candles:
+            break
+
+    # final render
+    if dashboard is not None:
+        window = feed.latest_window(config.strategy.window)
+        plot_df = window.tail(plot_window)
+        last_close = float(window["close"].iloc[-1]) if len(window) else 0.0
+        if is_sim:
+            equity = agent.broker.equity(last_close)
+            positions, closed = agent.broker.positions, agent.broker.closed
+        else:
+            equity, positions, closed = config.starting_equity, (), ()
+        dashboard.update(plot_df, equity, config.starting_equity,
+                         positions, closed, png_path=png_path)
+        if verbose:
+            print(f"dashboard written to {dashboard.html_path}"
+                  + (f" (snapshot {png_path})" if png_path else ""))
+    return agent
 
 
 def run_live_replay(
@@ -33,46 +109,9 @@ def run_live_replay(
     max_candles: Optional[int] = None,
     verbose: bool = True,
 ) -> TradingAgent:
-    """Replay ``ohlc`` through a paper agent, refreshing ``dashboard`` as it goes.
-
-    Returns the agent (inspect ``agent.broker.closed`` / ``.positions``).
-    """
-    agent = TradingAgent(config)              # SimBroker / paper by default
-    broker = agent.broker
-    dashboard = dashboard or LiveDashboard(cfg=DashboardConfig())
-
-    warmup = min(config.strategy.window, max(0, len(ohlc) - 1))
-    closes = ohlc["close"].values
-    times = ohlc.index
-    n = len(ohlc)
-    rendered = 0
-
-    for i in range(warmup, n):
-        window = ohlc.iloc[max(0, i - config.strategy.window + 1) : i + 1]
-        result = agent.step(window, when=times[i])
-
-        if verbose and result.acted:
-            print(f"[{times[i]}] {result.signal.side.value.upper()} "
-                  f"{result.lots:.2f} lots — {result.signal.reason}")
-
-        if (i - warmup) % render_every == 0:
-            plot_df = ohlc.iloc[max(0, i - plot_window + 1) : i + 1]
-            equity = broker.equity(float(closes[i]))
-            snap = png_path if (png_every and rendered % png_every == 0) else None
-            dashboard.update(plot_df, equity, config.starting_equity,
-                             broker.positions, broker.closed, png_path=snap)
-            rendered += 1
-
-        if max_candles is not None and (i - warmup) >= max_candles:
-            break
-
-    # final render
-    last_i = min(i, n - 1)
-    plot_df = ohlc.iloc[max(0, last_i - plot_window + 1) : last_i + 1]
-    dashboard.update(plot_df, broker.equity(float(closes[last_i])),
-                     config.starting_equity, broker.positions, broker.closed,
-                     png_path=png_path)
-    if verbose:
-        print(f"dashboard written to {dashboard.html_path}"
-              + (f" (snapshot {png_path})" if png_path else ""))
-    return agent
+    """Offline convenience: replay a DataFrame through :func:`run_live`."""
+    feed = CsvDataFeed(ohlc, symbol=config.instrument.symbol,
+                       start_at=min(config.strategy.window, max(1, len(ohlc) - 1)))
+    return run_live(config, feed, dashboard, plot_window=plot_window,
+                    render_every=render_every, png_path=png_path, png_every=png_every,
+                    max_candles=max_candles, verbose=verbose)
