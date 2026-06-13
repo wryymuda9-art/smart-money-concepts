@@ -54,6 +54,24 @@ def main(argv=None) -> int:
     bt.add_argument("--no-require-session", dest="require_session", action="store_false")
     bt.add_argument("--progress-every", type=int, default=0)
 
+    dash = sub.add_parser("dashboard", help="replay candles into a live SMC dashboard")
+    dash.add_argument("--csv", required=True, help="OHLCV csv (MT5/generic export)")
+    dash.add_argument("--symbol", default="XAUUSD")
+    dash.add_argument("--equity", type=float, default=10_000.0)
+    dash.add_argument("--risk-per-trade", type=float, default=0.005)
+    dash.add_argument("--max-daily-loss", type=float, default=0.03)
+    dash.add_argument("--max-daily-trades", type=int, default=10)
+    dash.add_argument("--swing-length", type=int, default=5)
+    dash.add_argument("--window", type=int, default=400)
+    dash.add_argument("--require-fvg", dest="require_fvg", action="store_true", default=True)
+    dash.add_argument("--no-require-fvg", dest="require_fvg", action="store_false")
+    dash.add_argument("--require-session", dest="require_session", action="store_true", default=False)
+    dash.add_argument("--html", default="xauusd_dashboard.html", help="output HTML path")
+    dash.add_argument("--png", default=None, help="also write a PNG snapshot here")
+    dash.add_argument("--plot-window", type=int, default=120, help="candles shown on chart")
+    dash.add_argument("--refresh-secs", type=int, default=2, help="HTML auto-refresh interval")
+    dash.add_argument("--max-candles", type=int, default=None, help="limit replay length")
+
     args = parser.parse_args(argv)
 
     if args.command == "backtest":
@@ -62,6 +80,20 @@ def main(argv=None) -> int:
         result = Backtester(cfg).run(ohlc, progress_every=args.progress_every)
         print(result)
         print(json.dumps(result.summary(), indent=2))
+        return 0
+
+    if args.command == "dashboard":
+        from .viz import LiveDashboard, DashboardConfig
+        from .live import run_live_replay
+
+        cfg = _build_config(args)
+        ohlc = load_csv(args.csv)
+        dcfg = DashboardConfig(swing_length=args.swing_length,
+                               show_sessions=args.require_session)
+        dashboard = LiveDashboard(html_path=args.html, cfg=dcfg,
+                                  refresh_secs=args.refresh_secs)
+        run_live_replay(cfg, ohlc, dashboard, plot_window=args.plot_window,
+                        png_path=args.png, max_candles=args.max_candles)
         return 0
 
     return 1

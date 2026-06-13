@@ -29,6 +29,8 @@ from .risk import RiskManager
 from .broker import SimBroker, Order, Position, OrderType
 from .backtest import Backtester, BacktestResult
 from .agent import TradingAgent
+from .viz import LiveDashboard, DashboardConfig, build_figure
+from .live import run_live_replay
 
 __all__ = [
     "AgentConfig",
@@ -47,6 +49,10 @@ __all__ = [
     "Backtester",
     "BacktestResult",
     "TradingAgent",
+    "LiveDashboard",
+    "DashboardConfig",
+    "build_figure",
+    "run_live_replay",
 ]
 
 __version__ = "0.1.0"
