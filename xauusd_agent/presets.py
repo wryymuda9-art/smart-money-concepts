@@ -6,6 +6,7 @@ sample data shipped under ``tests/test_data/XAUUSD/``.
 
 Bundled real data (for demos/tests only — supply your own for live use):
     XAUUSD_4H.csv   ~2,081 candles, 2020-12 .. 2022-04  (real, with volume)
+    XAUUSD_M15.csv  ~3,138 candles, 2025-11 .. 2026-01  (real, day-trade timeframe)
     XAUUSD_5M.csv   ~551 candles,  2020-02-03..04        (real, scalping timeframe)
 """
 
@@ -21,11 +22,15 @@ _DATA_DIR = os.path.join(
 )
 
 
-def sample_data_path(timeframe: str = "4H") -> str:
-    """Absolute path to a bundled real XAUUSD sample CSV ('4H' or '5M')."""
-    name = {"4H": "XAUUSD_4H.csv", "5M": "XAUUSD_5M.csv"}.get(timeframe.upper())
+def sample_data_path(timeframe: str = "M15") -> str:
+    """Absolute path to a bundled real XAUUSD sample CSV ('4H', 'M15' or '5M')."""
+    name = {
+        "4H": "XAUUSD_4H.csv",
+        "M15": "XAUUSD_M15.csv", "15M": "XAUUSD_M15.csv",
+        "5M": "XAUUSD_5M.csv",
+    }.get(timeframe.upper())
     if name is None:
-        raise ValueError("timeframe must be '4H' or '5M'")
+        raise ValueError("timeframe must be '4H', 'M15' or '5M'")
     return os.path.join(_DATA_DIR, name)
 
 
