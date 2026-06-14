@@ -275,5 +275,40 @@ class TestResearch(unittest.TestCase):
         self.assertIn("trades", wf.oos_metrics)
 
 
+class TestStrategyUpgrades(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        cls.ohlc = load_csv(sample_data_path("4H")).head(800)
+        cls.base = xauusd_config(timeframe="4H")
+        cls.base.strategy.window = 120
+        cls.base.strategy.require_fvg = False
+
+    def _trades(self, **flags):
+        import copy
+        from xauusd_agent.backtest import Backtester
+        cfg = copy.deepcopy(self.base)
+        for k, v in flags.items():
+            setattr(cfg.strategy, k, v)
+        return len(Backtester(cfg).run(self.ohlc).trades)
+
+    def test_htf_bias_returns_side_or_none(self):
+        from xauusd_agent.strategy import SMCStrategy, Side
+        s = SMCStrategy(self.base.strategy, self.base.instrument)
+        bias = s._htf_bias(self.ohlc.iloc[:600])
+        self.assertIn(bias, (Side.LONG, Side.SHORT, Side.NONE, None))
+
+    def test_upgrades_are_additional_filters(self):
+        base = self._trades()
+        # each gate can only remove setups, never invent them
+        self.assertLessEqual(self._trades(require_htf_alignment=True), base)
+        self.assertLessEqual(self._trades(require_liquidity_sweep=True), base)
+
+    def test_upgrades_off_by_default(self):
+        self.assertFalse(self.base.strategy.require_htf_alignment)
+        self.assertFalse(self.base.strategy.require_liquidity_sweep)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

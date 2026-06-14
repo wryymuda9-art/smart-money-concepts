@@ -163,6 +163,44 @@ class SMCStrategy:
                     best = lvl
         return best
 
+    def _recent_sweep(self, liq: pd.DataFrame, direction: int, last: int,
+                      lookback: int) -> bool:
+        """True if opposing liquidity was swept within ``lookback`` candles.
+
+        Long (direction 1) wants sell-side liquidity (bearish pool, lows) swept;
+        short wants buy-side liquidity (bullish pool, highs) swept — the ICT
+        stop-hunt that precedes a reversal.
+        """
+        want = -1 if direction == 1 else 1
+        kinds = liq["Liquidity"].values
+        swept = liq["Swept"].values
+        for i in range(len(liq)):
+            if kinds[i] != want:
+                continue
+            s = swept[i]
+            if not np.isnan(s) and s != 0 and (last - lookback) <= s <= last:
+                return True
+        return False
+
+    def _htf_bias(self, window: pd.DataFrame) -> Optional[Side]:
+        """Bias from a higher timeframe built by aggregating every N candles.
+
+        Returns None when there isn't enough data to judge (treated as 'no veto').
+        """
+        m = max(2, self.cfg.htf_multiplier)
+        if len(window) < m * (3 * self.cfg.swing_length + 5):
+            return None
+        groups = np.arange(len(window)) // m
+        htf = window.groupby(groups).agg(
+            open=("open", "first"), high=("high", "max"),
+            low=("low", "min"), close=("close", "last"),
+            volume=("volume", "sum"),
+        ).reset_index(drop=True)
+        if len(htf) < 3 * self.cfg.swing_length + 5:
+            return None
+        shl = smc.swing_highs_lows(htf, swing_length=self.cfg.swing_length)
+        return self._current_bias(smc.bos_choch(htf, shl), len(htf) - 1)
+
     # -- main entry point -------------------------------------------------------
 
     def evaluate(self, window: pd.DataFrame) -> Signal:
@@ -185,6 +223,19 @@ class SMCStrategy:
             return Signal(side=Side.NONE, reason="no structural bias")
 
         direction = 1 if bias is Side.LONG else -1
+
+        # Multi-timeframe confluence: entry must agree with the higher-timeframe bias.
+        if cfg.require_htf_alignment:
+            htf = self._htf_bias(window)
+            if htf is not None and htf is not bias:
+                return Signal(side=Side.NONE, reason="HTF bias misaligned")
+
+        # Liquidity-sweep trigger: require a recent opposing stop-hunt.
+        if cfg.require_liquidity_sweep:
+            liq_s = smc.liquidity(window, shl, range_percent=cfg.liquidity_range_percent)
+            if not self._recent_sweep(liq_s, direction, last, cfg.liquidity_sweep_lookback):
+                return Signal(side=Side.NONE, reason="no liquidity sweep")
+
         ob = smc.ob(window, shl)
         ob_idx = self._active_order_block(ob, direction, last)
         if ob_idx is None:

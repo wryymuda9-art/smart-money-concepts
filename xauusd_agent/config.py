@@ -82,6 +82,17 @@ class StrategyConfig:
     # Minimum order-block strength (smc OB "Percentage") to accept, 0 disables.
     min_ob_strength: float = 0.0
 
+    # --- ICT upgrades (optional, off by default) -----------------------------
+    # Require a recent opposing liquidity sweep (stop-hunt) before entering:
+    # for a long, sell-side liquidity below must have been swept; for a short,
+    # buy-side liquidity above. Models the ICT "sweep -> reversal" idea.
+    require_liquidity_sweep: bool = False
+    liquidity_sweep_lookback: int = 20    # how many candles back the sweep may be
+    # Require the entry direction to agree with a higher-timeframe bias built by
+    # aggregating every `htf_multiplier` candles (multi-timeframe confluence).
+    require_htf_alignment: bool = False
+    htf_multiplier: int = 4               # e.g. base M15 -> H1 bias
+
 
 @dataclass
 class AgentConfig:

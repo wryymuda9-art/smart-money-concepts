@@ -80,6 +80,21 @@ backtests don't cheat with look-ahead. For each closed candle it layers smc:
 Every confluence is a toggle/weight in `StrategyConfig`, so you can loosen or
 tighten the setup without editing code.
 
+### Optional ICT upgrades (opt-in)
+
+Two stronger confluences are available but **off by default** (they're strict and
+need dense intraday data to earn their keep — validate with the walk-forward
+before enabling live):
+
+- **Liquidity-sweep trigger** (`require_liquidity_sweep`) — only enter after a
+  recent *opposing* liquidity sweep / stop-hunt (sell-side swept below → long;
+  buy-side swept above → short), within `liquidity_sweep_lookback` candles. Models
+  the ICT "sweep → reversal" sequence.
+- **Multi-timeframe bias** (`require_htf_alignment`) — require the entry direction
+  to agree with a higher-timeframe bias built by aggregating every
+  `htf_multiplier` candles (e.g. M15 base → H1 bias). Stops you trading LTF setups
+  against the HTF trend.
+
 ## Risk management & position sizing
 
 Fixed-fractional risk — the loss if the stop is hit is ~`risk_per_trade` of equity
@@ -269,8 +284,8 @@ by `smartmoneyconcepts`). Extra features:
 
 - ✅ Live XAUUSD data ingestion (MT5 `copy_rates_*`) + real-time loop (`feed.py`, `live.py`).
 - ✅ Visual live dashboard (`viz.py`).
-- Liquidity-**sweep** entry trigger (sweep → CHoCH → OB tap) and multi-timeframe bias.
-- Walk-forward optimisation and parameter sweeps over the confluence toggles.
+- ✅ Liquidity-sweep entry trigger and multi-timeframe bias (`require_liquidity_sweep`, `require_htf_alignment`).
+- ✅ Walk-forward optimisation and parameter sweeps over the confluence toggles (`research.py`).
 - Trailing stops / partial take-profits / break-even moves.
 - Per-session and per-day-of-week performance attribution.
 - News-blackout filter (gold is very sensitive to USD/CPI/FOMC).
