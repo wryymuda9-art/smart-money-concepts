@@ -17,6 +17,8 @@ from __future__ import annotations
 import argparse
 import json
 
+import pandas as pd
+
 from .config import AgentConfig, Mode
 from .data import load_csv
 from .backtest import Backtester
@@ -103,6 +105,20 @@ def main(argv=None) -> int:
     dl.add_argument("--password", default=None)
     dl.add_argument("--server", default=None)
 
+    for name, helptext in (("optimize", "grid-search parameters on data"),
+                           ("walkforward", "walk-forward (out-of-sample) validation")):
+        sp = sub.add_parser(name, help=helptext)
+        grp = sp.add_mutually_exclusive_group(required=True)
+        grp.add_argument("--csv", help="OHLCV csv")
+        grp.add_argument("--timeframe", help="use bundled XAUUSD sample: 4H or 5M")
+        sp.add_argument("--equity", type=float, default=10_000.0)
+        sp.add_argument("--window", type=int, default=150)
+        sp.add_argument("--objective", default="profit_factor",
+                        help="metric to optimise (profit_factor, avg_R, sharpe, expectancy_usd)")
+        sp.add_argument("--top", type=int, default=10, help="rows to show (optimize)")
+        sp.add_argument("--splits", type=int, default=3, help="walk-forward folds")
+        sp.add_argument("--out", default=None, help="save full results table to csv")
+
     args = parser.parse_args(argv)
 
     if args.command == "backtest":
@@ -128,7 +144,6 @@ def main(argv=None) -> int:
         return 0
 
     if args.command == "live":
-        from .config import Mode
         from .feed import Mt5DataFeed
         from .broker import Mt5Broker
         from .viz import LiveDashboard, DashboardConfig
@@ -170,6 +185,38 @@ def main(argv=None) -> int:
         finally:
             feed.shutdown()
         print(f"saved {len(df)} candles to {args.out}")
+        return 0
+
+    if args.command in ("optimize", "walkforward"):
+        from .presets import xauusd_config, sample_data_path
+        from .research import sweep, walk_forward
+
+        base = xauusd_config(mode=Mode.BACKTEST, timeframe=args.timeframe or "4H",
+                             starting_equity=args.equity)
+        base.strategy.window = args.window
+        path = args.csv or sample_data_path(args.timeframe)
+        ohlc = load_csv(path)
+        print(f"data: {len(ohlc)} candles {ohlc.index.min()} -> {ohlc.index.max()}")
+
+        # a sensible default search space for XAUUSD structure/risk
+        grid = {
+            "strategy.swing_length": [4, 6, 8],
+            "strategy.require_fvg": [True, False],
+            "strategy.default_rr": [2.0, 3.0],
+        }
+
+        if args.command == "optimize":
+            df = sweep(base, ohlc, grid, sort_by=args.objective, verbose=True)
+            if args.out:
+                df.to_csv(args.out, index=False)
+            with pd.option_context("display.max_columns", None, "display.width", 200):
+                print(df.head(args.top).to_string(index=False))
+            return 0
+
+        wf = walk_forward(base, ohlc, grid, n_splits=args.splits,
+                          objective=args.objective, verbose=True)
+        print(wf)
+        print(json.dumps(wf.summary(), indent=2, default=str))
         return 0
 
     return 1

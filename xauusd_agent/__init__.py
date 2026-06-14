@@ -33,6 +33,7 @@ from .viz import LiveDashboard, DashboardConfig, build_figure
 from .feed import CsvDataFeed, Mt5DataFeed
 from .live import run_live, run_live_replay
 from .presets import xauusd_config, sample_data_path
+from .research import compute_metrics, sweep, walk_forward, WalkForwardResult
 
 __all__ = [
     "AgentConfig",
@@ -60,6 +61,10 @@ __all__ = [
     "run_live_replay",
     "xauusd_config",
     "sample_data_path",
+    "compute_metrics",
+    "sweep",
+    "walk_forward",
+    "WalkForwardResult",
 ]
 
 __version__ = "0.1.0"

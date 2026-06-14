@@ -238,5 +238,42 @@ class TestXauusdPreset(unittest.TestCase):
             self.assertLessEqual(risk, cfg.starting_equity * cfg.risk.risk_per_trade * 3)
 
 
+class TestResearch(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        cls.ohlc = load_csv(sample_data_path("4H")).head(700)
+        cls.cfg = xauusd_config(timeframe="4H")
+        cls.cfg.strategy.window = 120
+        cls.cfg.strategy.require_fvg = False
+
+    def test_compute_metrics_shape(self):
+        from xauusd_agent.backtest import Backtester
+        from xauusd_agent.research import compute_metrics
+        m = compute_metrics(Backtester(self.cfg).run(self.ohlc))
+        for k in ("trades", "profit_factor", "avg_R", "sharpe", "max_drawdown",
+                  "cagr", "significance"):
+            self.assertIn(k, m)
+        # few trades on a short slice -> not statistically significant
+        self.assertIn(m["significance"], ("none", "weak", "moderate", "ok"))
+
+    def test_sweep_returns_row_per_combo(self):
+        from xauusd_agent.research import sweep
+        grid = {"strategy.swing_length": [4, 6], "strategy.require_fvg": [False]}
+        df = sweep(self.cfg, self.ohlc, grid)
+        self.assertEqual(len(df), 2)
+        self.assertIn("profit_factor", df.columns)
+        self.assertIn("strategy.swing_length", df.columns)
+
+    def test_walk_forward_oos_only(self):
+        from xauusd_agent.research import walk_forward
+        grid = {"strategy.swing_length": [4, 6]}
+        wf = walk_forward(self.cfg, self.ohlc, grid, n_splits=2, min_is_trades=1)
+        # produced at least one fold and an OOS summary
+        self.assertGreaterEqual(len(wf.splits), 1)
+        self.assertIn("trades", wf.oos_metrics)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

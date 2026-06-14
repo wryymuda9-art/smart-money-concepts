@@ -206,6 +206,43 @@ if result.acted:
 For **paper trading**, use the default `SimBroker` (omit `broker=`) with
 `Mode.PAPER` and feed it live candles the same way.
 
+## Validation harness (trust the numbers)
+
+A single backtest is a noisy number. `research.py` makes results believable:
+
+- **`compute_metrics(result)`** — risk-aware stats: `avg_R` (mean realised
+  reward:risk), `sharpe`, `sortino`, `cagr`, `payoff`, `max_drawdown`,
+  `max_consec_losses`, plus a **`significance`** flag derived from trade count
+  (`none` <30, `weak` <100, `moderate` <300, `ok`). Under ~100 trades, treat any
+  edge as unproven.
+- **`sweep(base, ohlc, grid)`** — grid-search parameters; one row of metrics per
+  combination, sorted by your objective.
+- **`walk_forward(base, ohlc, grid, n_splits)`** — optimise on in-sample, measure
+  on the *next unseen* out-of-sample slice, repeat, and report the **stitched OOS**
+  performance. This is the honest, curve-fit-resistant number.
+
+```bash
+# grid-search on the bundled real gold (or --csv your own)
+SMC_CREDIT=0 python -m xauusd_agent.cli optimize    --timeframe 4H --objective avg_R --top 10
+# out-of-sample walk-forward validation
+SMC_CREDIT=0 python -m xauusd_agent.cli walkforward --timeframe 4H --splits 3 --objective profit_factor
+```
+
+```python
+from xauusd_agent import xauusd_config, sweep, walk_forward, sample_data_path
+from xauusd_agent.data import load_csv
+
+cfg, ohlc = xauusd_config(timeframe="4H"), load_csv(sample_data_path("4H"))
+grid = {"strategy.swing_length": [4, 6, 8], "strategy.require_fvg": [True, False]}
+table = sweep(cfg, ohlc, grid, sort_by="avg_R")          # ranked DataFrame
+wf    = walk_forward(cfg, ohlc, grid, n_splits=3)         # OOS result
+print(wf)
+```
+
+> **Read the `significance` flag first.** The bundled samples are short, so demo
+> results will say `none`/`weak`. Meaningful conclusions need months of intraday
+> data → hundreds of trades.
+
 ## Tests
 
 ```bash
