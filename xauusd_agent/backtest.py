@@ -105,7 +105,8 @@ class Backtester:
         self.risk = RiskManager(
             config.risk, config.instrument, starting_equity=config.starting_equity
         )
-        self.broker = SimBroker(config.instrument, starting_equity=config.starting_equity)
+        self.broker = SimBroker(config.instrument, starting_equity=config.starting_equity,
+                                management=config.management)
 
     def run(self, ohlc: pd.DataFrame, progress_every: int = 0) -> BacktestResult:
         cfg = self.config

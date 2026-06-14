@@ -49,7 +49,8 @@ class TradingAgent:
                 "auto-create a live connection."
             )
         else:
-            self.broker = SimBroker(config.instrument, config.starting_equity)
+            self.broker = SimBroker(config.instrument, config.starting_equity,
+                                    management=config.management)
 
     # -- backtest ---------------------------------------------------------------
 

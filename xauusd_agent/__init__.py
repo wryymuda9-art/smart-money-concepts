@@ -23,7 +23,9 @@ NOTHING in this package places a real order unless you construct an `Mt5Broker`
 and run the agent with `Mode.LIVE`. The default everywhere is simulation.
 """
 
-from .config import AgentConfig, RiskConfig, StrategyConfig, InstrumentSpec, Mode
+from .config import (
+    AgentConfig, RiskConfig, StrategyConfig, InstrumentSpec, ManagementConfig, Mode,
+)
 from .strategy import SMCStrategy, Signal, Side
 from .risk import RiskManager
 from .broker import SimBroker, Order, Position, OrderType
@@ -40,6 +42,7 @@ __all__ = [
     "RiskConfig",
     "StrategyConfig",
     "InstrumentSpec",
+    "ManagementConfig",
     "Mode",
     "SMCStrategy",
     "Signal",

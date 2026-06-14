@@ -50,6 +50,10 @@ class Position:
     money_per_price_per_lot: float
     commission: float = 0.0
     comment: str = ""
+    # in-trade management state
+    init_risk: float = 0.0          # |entry - initial stop| in price units
+    peak: float = 0.0               # best price reached (for trailing)
+    partial_done: bool = False
 
     def unrealised(self, price: float) -> float:
         direction = 1 if self.side is Side.LONG else -1
@@ -68,8 +72,11 @@ class ClosedTrade:
 class SimBroker:
     """Deterministic simulated broker for backtest / paper trading."""
 
-    def __init__(self, instrument: InstrumentSpec, starting_equity: float = 10_000.0):
+    def __init__(self, instrument: InstrumentSpec, starting_equity: float = 10_000.0,
+                 management=None):
+        from .config import ManagementConfig
         self.instrument = instrument
+        self.mgmt = management or ManagementConfig()
         self.balance = starting_equity
         self.positions: List[Position] = []
         self.closed: List[ClosedTrade] = []
@@ -112,6 +119,8 @@ class SimBroker:
             commission=commission,
             comment=order.comment,
         )
+        pos.init_risk = abs(pos.entry - pos.stop)
+        pos.peak = pos.entry
         self.positions.append(pos)
         self._next_id += 1
         return pos
@@ -124,23 +133,63 @@ class SimBroker:
         self.closed.append(trade)
         return trade
 
+    def _close_partial(self, pos: Position, fraction: float, exit_price: float,
+                       when: datetime, reason: str) -> Optional[ClosedTrade]:
+        """Close `fraction` of a position; the remainder stays open."""
+        import dataclasses
+        closed_lots = round(pos.lots * fraction, 8)
+        if closed_lots <= 0:
+            return None
+        direction = 1 if pos.side is Side.LONG else -1
+        pnl = (exit_price - pos.entry) * direction * closed_lots * pos.money_per_price_per_lot
+        self.balance += pnl
+        leg = dataclasses.replace(pos, lots=closed_lots)
+        trade = ClosedTrade(leg, exit_price, when, pnl, reason)
+        self.closed.append(trade)
+        pos.lots = round(pos.lots - closed_lots, 8)
+        return trade
+
     def update(self, high: float, low: float, close: float, when: datetime) -> List[ClosedTrade]:
-        """Process one candle: trigger stops / targets. Returns trades closed."""
+        """Process one candle: stops / targets / partials, then trail for next bar."""
+        mgmt = self.mgmt
         out: List[ClosedTrade] = []
         for pos in list(self.positions):
-            if pos.side is Side.LONG:
-                stop_hit = low <= pos.stop
-                tp_hit = high >= pos.take_profit
-            else:
-                stop_hit = high >= pos.stop
-                tp_hit = low <= pos.take_profit
+            long = pos.side is Side.LONG
+            d = 1 if long else -1
+            risk = pos.init_risk
 
-            # Conservative tie-break: if both could trigger in the same candle,
-            # assume the stop filled first (worst case).
-            if stop_hit:
+            # 1. protective stop (checked against the *current* stop, pre-update)
+            if (low <= pos.stop) if long else (high >= pos.stop):
                 out.append(self._close(pos, pos.stop, when, "stop"))
-            elif tp_hit:
+                continue
+
+            # 2. partial take-profit (closer than the final target)
+            if mgmt.partial_enabled and not pos.partial_done and risk > 0:
+                ptp = pos.entry + d * mgmt.partial_at_r * risk
+                if (high >= ptp) if long else (low <= ptp):
+                    t = self._close_partial(pos, mgmt.partial_fraction, ptp, when, "partial")
+                    if t is not None:
+                        out.append(t)
+                    pos.partial_done = True
+                    if mgmt.partial_then_breakeven:
+                        pos.stop = max(pos.stop, pos.entry) if long else min(pos.stop, pos.entry)
+                    continue  # process the remainder from the next candle
+
+            # 3. final target on the (possibly reduced) position
+            if (high >= pos.take_profit) if long else (low <= pos.take_profit):
                 out.append(self._close(pos, pos.take_profit, when, "target"))
+                continue
+
+            # 4. still open -> advance peak and tighten stop for the NEXT candle
+            pos.peak = max(pos.peak, high) if long else min(pos.peak, low)
+            if risk > 0 and mgmt.breakeven_enabled:
+                if (pos.peak - pos.entry) * d >= mgmt.breakeven_at_r * risk:
+                    be = pos.entry + d * mgmt.breakeven_offset_r * risk
+                    pos.stop = max(pos.stop, be) if long else min(pos.stop, be)
+            if risk > 0 and mgmt.trailing_enabled:
+                if (pos.peak - pos.entry) * d >= mgmt.trailing_at_r * risk:
+                    trail = pos.peak - d * mgmt.trailing_distance_r * risk
+                    pos.stop = max(pos.stop, trail) if long else min(pos.stop, trail)
         return out
 
     def close_all(self, price: float, when: datetime, reason: str = "eod") -> List[ClosedTrade]:

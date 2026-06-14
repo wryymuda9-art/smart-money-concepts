@@ -95,6 +95,34 @@ class StrategyConfig:
 
 
 @dataclass
+class ManagementConfig:
+    """In-trade management. All off by default -> plain stop/target behaviour.
+
+    Distances are expressed in **R** (multiples of the initial risk = |entry-stop|),
+    so they're timeframe- and price-agnostic.
+    """
+
+    # Break-even: once price is +`breakeven_at_r` in favour, move the stop to entry
+    # (plus a small locked profit `breakeven_offset_r` of R).
+    breakeven_enabled: bool = False
+    breakeven_at_r: float = 1.0
+    breakeven_offset_r: float = 0.0
+
+    # Trailing: once price is +`trailing_at_r` in favour, trail the stop
+    # `trailing_distance_r` behind the best price reached.
+    trailing_enabled: bool = False
+    trailing_at_r: float = 1.0
+    trailing_distance_r: float = 1.0
+
+    # Partial take-profit: close `partial_fraction` of the position at
+    # +`partial_at_r`, then (optionally) move the stop to break-even.
+    partial_enabled: bool = False
+    partial_at_r: float = 1.0
+    partial_fraction: float = 0.5
+    partial_then_breakeven: bool = True
+
+
+@dataclass
 class AgentConfig:
     """Top-level configuration tying every layer together."""
 
@@ -103,3 +131,4 @@ class AgentConfig:
     instrument: InstrumentSpec = field(default_factory=InstrumentSpec)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    management: ManagementConfig = field(default_factory=ManagementConfig)

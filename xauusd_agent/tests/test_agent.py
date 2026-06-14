@@ -310,5 +310,61 @@ class TestStrategyUpgrades(unittest.TestCase):
         self.assertFalse(self.base.strategy.require_liquidity_sweep)
 
 
+class TestTradeManagement(unittest.TestCase):
+    def setUp(self):
+        from xauusd_agent import InstrumentSpec
+        self.spec = InstrumentSpec(sim_spread=0.0, sim_slippage=0.0)
+        self.t = pd.Timestamp("2024-01-01")
+
+    def test_off_by_default(self):
+        from xauusd_agent import ManagementConfig
+        m = ManagementConfig()
+        self.assertFalse(m.breakeven_enabled)
+        self.assertFalse(m.trailing_enabled)
+        self.assertFalse(m.partial_enabled)
+
+    def test_partial_take_profit_then_breakeven(self):
+        from xauusd_agent import ManagementConfig
+        from xauusd_agent.broker import SimBroker, Order
+        from xauusd_agent.strategy import Side
+        mg = ManagementConfig(partial_enabled=True, partial_at_r=1.0,
+                              partial_fraction=0.5, partial_then_breakeven=True)
+        b = SimBroker(self.spec, 10_000, management=mg)
+        # long entry 2000, stop 1990 (risk 10); +1R target = 2010
+        b.place(Order(Side.LONG, 1.0, stop=1990, take_profit=2050), ref_price=2000, when=self.t)
+        b.update(high=2012, low=2000, close=2011, when=self.t)
+        # half closed, stop moved to break-even (entry)
+        self.assertAlmostEqual(b.positions[0].lots, 0.5, places=6)
+        self.assertAlmostEqual(b.positions[0].stop, 2000.0, places=6)
+        closed = b.update(high=2001, low=1999, close=2000, when=self.t)
+        self.assertEqual(closed[0].reason, "stop")
+        # net: +$500 partial + $0 break-even remainder
+        self.assertAlmostEqual(b.balance, 10_500.0, places=4)
+
+    def test_breakeven_protects_winner(self):
+        from xauusd_agent import ManagementConfig
+        from xauusd_agent.broker import SimBroker, Order
+        from xauusd_agent.strategy import Side
+        mg = ManagementConfig(breakeven_enabled=True, breakeven_at_r=1.0)
+        b = SimBroker(self.spec, 10_000, management=mg)
+        b.place(Order(Side.LONG, 1.0, stop=1990, take_profit=2050), ref_price=2000, when=self.t)
+        b.update(high=2010, low=2001, close=2009, when=self.t)   # +1R -> stop to entry
+        self.assertAlmostEqual(b.positions[0].stop, 2000.0, places=6)
+        closed = b.update(high=2001, low=1999, close=2000, when=self.t)
+        self.assertAlmostEqual(closed[0].pnl, 0.0, places=4)     # scratched, not a loss
+
+    def test_trailing_locks_profit(self):
+        from xauusd_agent import ManagementConfig
+        from xauusd_agent.broker import SimBroker, Order
+        from xauusd_agent.strategy import Side
+        mg = ManagementConfig(trailing_enabled=True, trailing_at_r=1.0, trailing_distance_r=1.0)
+        b = SimBroker(self.spec, 10_000, management=mg)
+        b.place(Order(Side.LONG, 1.0, stop=1990, take_profit=2100), ref_price=2000, when=self.t)
+        b.update(high=2030, low=2001, close=2029, when=self.t)   # peak 2030 -> trail to 2020
+        self.assertAlmostEqual(b.positions[0].stop, 2020.0, places=6)
+        closed = b.update(high=2021, low=2019, close=2020, when=self.t)
+        self.assertGreater(closed[0].pnl, 0.0)                   # locked-in profit
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
