@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 
-from .config import AgentConfig, Mode
+from .config import AgentConfig, ManagementConfig, Mode
 
 _DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -35,15 +35,27 @@ def sample_data_path(timeframe: str = "M15") -> str:
 
 
 def xauusd_config(mode: Mode = Mode.BACKTEST, timeframe: str = "5M",
-                  starting_equity: float = 10_000.0) -> AgentConfig:
+                  starting_equity: float = 10_000.0,
+                  with_management: bool = False) -> AgentConfig:
     """A sensible XAUUSD config tuned for the given timeframe.
 
     * **5M / scalping** — tight structure, kill-zone timing on, FVG confluence on.
     * **15M / day-trade** — slightly larger structure.
     * **1H/4H / swing** — larger structure, sessions off (intraday concept).
+
+    ``with_management=True`` enables the partial-take-profit + trailing-stop combo
+    that improved the M15 day-trade backtest (PF 0.95 -> 1.12): take half off at
+    +1R and trail the rest 1.5R behind the peak.
     """
     cfg = AgentConfig(mode=mode, starting_equity=starting_equity)
     tf = timeframe.upper()
+
+    if with_management:
+        cfg.management = ManagementConfig(
+            partial_enabled=True, partial_at_r=1.0, partial_fraction=0.5,
+            partial_then_breakeven=False,
+            trailing_enabled=True, trailing_at_r=1.0, trailing_distance_r=1.5,
+        )
 
     cfg.risk.risk_per_trade = 0.005          # 0.5% per trade
     cfg.risk.max_daily_loss = 0.03           # halt the day at -3%
