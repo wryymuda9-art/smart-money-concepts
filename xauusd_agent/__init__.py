@@ -32,6 +32,7 @@ from .agent import TradingAgent
 from .viz import LiveDashboard, DashboardConfig, build_figure
 from .feed import CsvDataFeed, Mt5DataFeed
 from .live import run_live, run_live_replay
+from .presets import xauusd_config, sample_data_path
 
 __all__ = [
     "AgentConfig",
@@ -57,6 +58,8 @@ __all__ = [
     "Mt5DataFeed",
     "run_live",
     "run_live_replay",
+    "xauusd_config",
+    "sample_data_path",
 ]
 
 __version__ = "0.1.0"

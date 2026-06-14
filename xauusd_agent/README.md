@@ -98,6 +98,30 @@ Gatekeeping in `RiskManager.can_trade(...)` enforces:
 - **Max concurrent positions** (`max_open_positions`).
 - **Min stop distance** and **max spread** filters (gold spreads are wide/variable).
 
+## Quick start on real XAUUSD (bundled)
+
+Real gold sample data ships under `tests/test_data/XAUUSD/` (`XAUUSD_4H.csv` ≈ 2,081
+candles 2020–2022 with volume; `XAUUSD_5M.csv` a short scalping-timeframe sample).
+One command backtests the gold-tuned preset on it:
+
+```bash
+SMC_CREDIT=0 python -m xauusd_agent.examples.run_xauusd --timeframe 4H
+# add a chart:
+SMC_CREDIT=0 python -m xauusd_agent.examples.run_xauusd --timeframe 4H --png xauusd.png
+```
+
+```python
+from xauusd_agent import xauusd_config, sample_data_path, Backtester
+from xauusd_agent.data import load_csv
+
+cfg  = xauusd_config(timeframe="5M")          # gold instrument + scalping tuning
+ohlc = load_csv(sample_data_path("4H"))       # or your own MT5 export
+print(Backtester(cfg).run(ohlc))
+```
+
+> The bundled data is for demonstration/tests only (short, single period). For any
+> real evaluation, supply your own history — `download` from MT5, or a broker CSV.
+
 ## Usage
 
 ### Backtest (CLI)

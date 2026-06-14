@@ -212,5 +212,31 @@ class TestLiveLoopPaper(unittest.TestCase):
                                cfg.starting_equity + realised, places=2)
 
 
+class TestXauusdPreset(unittest.TestCase):
+    def test_bundled_real_data_backtests(self):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.backtest import Backtester
+        from xauusd_agent.config import Mode
+
+        ohlc = load_csv(sample_data_path("4H"))
+        # real gold prices, sane range
+        self.assertGreater(len(ohlc), 1500)
+        self.assertTrue(1000 < float(ohlc["close"].median()) < 4000)
+
+        cfg = xauusd_config(mode=Mode.BACKTEST, timeframe="4H")
+        cfg.strategy.window = 150          # smaller window -> faster test
+        result = Backtester(cfg).run(ohlc.head(900))
+        # pipeline ran and accounting is consistent
+        realised = sum(t.pnl for t in result.trades)
+        self.assertAlmostEqual(result.final_equity,
+                               cfg.starting_equity + realised, places=2)
+        # every trade respected the gold risk budget (0.5% * 3 headroom)
+        for t in result.trades:
+            risk = abs(t.position.entry - t.position.stop) * t.position.lots * \
+                cfg.instrument.money_per_price_per_lot
+            self.assertLessEqual(risk, cfg.starting_equity * cfg.risk.risk_per_trade * 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
