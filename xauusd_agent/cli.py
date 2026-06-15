@@ -71,6 +71,7 @@ def main(argv=None) -> int:
     bt.add_argument("--progress-every", type=int, default=0)
     bt.add_argument("--report-html", default=None, help="write a performance tearsheet (HTML)")
     bt.add_argument("--report-png", default=None, help="write a performance tearsheet (PNG)")
+    bt.add_argument("--montecarlo", type=int, default=0, help="bootstrap N sims to estimate the outcome distribution")
 
     dash = sub.add_parser("dashboard", help="replay candles into a live SMC dashboard")
     dash.add_argument("--csv", required=True, help="OHLCV csv (MT5/generic export)")
@@ -143,6 +144,12 @@ def main(argv=None) -> int:
         result = Backtester(cfg).run(ohlc, progress_every=args.progress_every)
         print(result)
         print(json.dumps(result.summary(), indent=2))
+        from .robustness import buy_and_hold_return
+        print(f"buy & hold over window: {buy_and_hold_return(ohlc):+.2%}")
+        if args.montecarlo:
+            from .robustness import monte_carlo
+            mc = monte_carlo(result, n_sims=args.montecarlo)
+            print("monte-carlo:", json.dumps(mc, indent=2))
         if args.report_html or args.report_png:
             from .report import save_report
             save_report(result, html_path=args.report_html, png_path=args.report_png,

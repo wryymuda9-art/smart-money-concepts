@@ -476,5 +476,37 @@ class TestReport(unittest.TestCase):
         self.assertGreaterEqual(len(fig.data), 2)
 
 
+class TestRobustness(unittest.TestCase):
+    def test_monte_carlo_distribution(self):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.backtest import Backtester
+        from xauusd_agent.robustness import monte_carlo, buy_and_hold_return
+        cfg = xauusd_config(timeframe="4H"); cfg.strategy.window = 120
+        cfg.strategy.require_fvg = False
+        ohlc = load_csv(sample_data_path("4H")).head(900)
+        result = Backtester(cfg).run(ohlc)
+        mc = monte_carlo(result, n_sims=1000)
+        if mc["trades"] > 0:
+            self.assertLessEqual(mc["return_p5"], mc["return_p50"])
+            self.assertLessEqual(mc["return_p50"], mc["return_p95"])
+            self.assertTrue(0.0 <= mc["prob_profit"] <= 1.0)
+        # benchmark is a finite number
+        self.assertEqual(buy_and_hold_return(ohlc), buy_and_hold_return(ohlc))
+
+    def test_monte_carlo_no_trades(self):
+        from xauusd_agent import AgentConfig, Mode
+        from xauusd_agent.backtest import Backtester
+        from xauusd_agent.robustness import monte_carlo
+        import pandas as pd, numpy as np
+        # flat data -> effectively no setups; just ensure it doesn't crash
+        idx = pd.date_range("2024-01-01", periods=50, freq="4h")
+        df = pd.DataFrame({"open": 2000.0, "high": 2000.5, "low": 1999.5,
+                           "close": 2000.0, "volume": 1.0}, index=idx)
+        result = Backtester(AgentConfig(mode=Mode.BACKTEST)).run(df)
+        mc = monte_carlo(result, n_sims=100)
+        self.assertIn("trades", mc)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

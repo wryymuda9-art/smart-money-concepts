@@ -31,6 +31,7 @@ from .news import NewsFilter
 from .journal import TradeJournal, save_state, load_state
 from .configio import load_config, save_config, config_from_dict, config_to_dict
 from .report import build_report_figure, save_report
+from .robustness import monte_carlo, buy_and_hold_return
 from .strategy import SMCStrategy, Signal, Side
 from .risk import RiskManager
 from .broker import SimBroker, Order, Position, OrderType
@@ -59,6 +60,8 @@ __all__ = [
     "config_to_dict",
     "build_report_figure",
     "save_report",
+    "monte_carlo",
+    "buy_and_hold_return",
     "Mode",
     "SMCStrategy",
     "Signal",
