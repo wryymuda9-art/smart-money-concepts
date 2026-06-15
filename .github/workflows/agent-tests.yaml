@@ -1,0 +1,29 @@
+name: XAUUSD Agent Tests
+
+on:
+  pull_request:
+    paths:
+      - "xauusd_agent/**"
+      - "smartmoneyconcepts/**"
+      - ".github/workflows/agent-tests.yaml"
+  push:
+    branches: [master, main]
+
+jobs:
+  agent_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy numba pyyaml
+          pip install .
+      - name: Run agent tests
+        env:
+          SMC_CREDIT: "0"
+        run: python -m unittest xauusd_agent.tests.test_agent -v

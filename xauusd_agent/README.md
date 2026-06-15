@@ -137,6 +137,26 @@ print(Backtester(cfg).run(ohlc))
 > The bundled data is for demonstration/tests only (short, single period). For any
 > real evaluation, supply your own history — `download` from MT5, or a broker CSV.
 
+## Run from a config file
+
+Describe a whole run declaratively (`xauusd_agent/config.example.yaml`) instead of
+juggling flags. Any omitted field keeps its default; explicit CLI flags override
+the file.
+
+```bash
+python -m xauusd_agent backtest --config xauusd_agent/config.example.yaml --csv gold.csv
+```
+
+```python
+from xauusd_agent import load_config, save_config, Backtester
+cfg = load_config("config.example.yaml")   # -> AgentConfig
+save_config(cfg, "my_run.yaml")
+```
+
+`python -m xauusd_agent <command>` works for every subcommand (`backtest`,
+`dashboard`, `live`, `download`, `optimize`, `walkforward`). Agent tests run in CI
+via `.github/workflows/agent-tests.yaml`.
+
 ## Usage
 
 ### Backtest (CLI)

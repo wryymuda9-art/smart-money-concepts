@@ -430,5 +430,38 @@ class TestJournalAndState(unittest.TestCase):
         self.assertEqual(rm2._day, date(2024, 1, 1))
 
 
+class TestConfigIO(unittest.TestCase):
+    def test_yaml_round_trip(self):
+        import tempfile, os
+        from xauusd_agent import AgentConfig, load_config, save_config, Mode
+        cfg = AgentConfig()
+        cfg.strategy.swing_length = 7
+        cfg.management.partial_enabled = True
+        cfg.news.enabled = True
+        path = os.path.join(tempfile.mkdtemp(), "c.yaml")
+        save_config(cfg, path)
+        back = load_config(path)
+        self.assertEqual(back.strategy.swing_length, 7)
+        self.assertTrue(back.management.partial_enabled)
+        self.assertTrue(back.news.enabled)
+        self.assertIs(back.mode, Mode.BACKTEST)
+
+    def test_partial_config_keeps_defaults(self):
+        from xauusd_agent import config_from_dict
+        cfg = config_from_dict({"starting_equity": 5000, "strategy": {"window": 123}})
+        self.assertEqual(cfg.starting_equity, 5000)
+        self.assertEqual(cfg.strategy.window, 123)
+        self.assertEqual(cfg.strategy.swing_length, 5)   # untouched default
+        self.assertFalse(cfg.management.partial_enabled)  # untouched default
+
+    def test_example_yaml_loads(self):
+        import os
+        from xauusd_agent import load_config
+        path = os.path.join(ROOT, "xauusd_agent", "config.example.yaml")
+        cfg = load_config(path)
+        self.assertEqual(cfg.instrument.symbol, "XAUUSD")
+        self.assertTrue(cfg.management.trailing_enabled)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

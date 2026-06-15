@@ -1,0 +1,52 @@
+# Example XAUUSD agent configuration.
+#   python -m xauusd_agent backtest --config xauusd_agent/config.example.yaml --csv your.csv
+# Any field omitted here keeps its built-in default; CLI flags override the file.
+
+mode: backtest
+starting_equity: 10000
+
+instrument:
+  symbol: XAUUSD
+  money_per_price_per_lot: 100.0   # USD P/L per 1.0 price move per 1.0 lot (gold)
+  min_lot: 0.01
+  lot_step: 0.01
+  max_spread: 0.50
+  sim_spread: 0.20                 # assumed cost in backtest (price units)
+  sim_slippage: 0.03
+  commission_per_lot: 0.0
+
+risk:
+  risk_per_trade: 0.005            # 0.5% of equity per trade
+  max_daily_loss: 0.03             # halt the day at -3%
+  max_daily_trades: 8
+  max_open_positions: 1
+  min_stop_distance: 0.5
+
+strategy:
+  swing_length: 6                  # M15 day-trade structure
+  window: 200
+  require_fvg: true
+  require_session: false           # enable once your data's timezone is confirmed
+  sessions: ["London open kill zone", "New York kill zone"]
+  default_rr: 2.0
+  # optional ICT confluences (off by default)
+  require_liquidity_sweep: false
+  require_htf_alignment: false
+  htf_multiplier: 4
+
+# in-trade management (the combo that improved the M15 backtest)
+management:
+  partial_enabled: true
+  partial_at_r: 1.0
+  partial_fraction: 0.5
+  partial_then_breakeven: false
+  trailing_enabled: true
+  trailing_at_r: 1.0
+  trailing_distance_r: 1.5
+
+# economic-calendar blackout (supply events via NewsFilter in code / a calendar CSV)
+news:
+  enabled: false
+  before_min: 30
+  after_min: 30
+  flatten_open: false

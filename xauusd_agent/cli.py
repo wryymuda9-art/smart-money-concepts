@@ -25,15 +25,27 @@ from .backtest import Backtester
 
 
 def _build_config(args) -> AgentConfig:
-    cfg = AgentConfig(mode=Mode.BACKTEST, starting_equity=args.equity)
-    cfg.instrument.symbol = args.symbol
-    cfg.risk.risk_per_trade = args.risk_per_trade
-    cfg.risk.max_daily_loss = args.max_daily_loss
-    cfg.risk.max_daily_trades = args.max_daily_trades
-    cfg.strategy.swing_length = args.swing_length
-    cfg.strategy.window = args.window
-    cfg.strategy.require_fvg = args.require_fvg
-    cfg.strategy.require_session = args.require_session
+    # a --config file (yaml/json) is the base; only explicitly-passed flags override it
+    if getattr(args, "config", None):
+        from .configio import load_config
+        cfg = load_config(args.config)
+        cfg.mode = Mode.BACKTEST
+    else:
+        cfg = AgentConfig(mode=Mode.BACKTEST)
+
+    def ov(value, default):
+        """Use the flag value if given, else the config/default already in place."""
+        return default if value is None else value
+
+    cfg.starting_equity = ov(getattr(args, "equity", None), cfg.starting_equity)
+    cfg.instrument.symbol = ov(getattr(args, "symbol", None), cfg.instrument.symbol)
+    cfg.risk.risk_per_trade = ov(getattr(args, "risk_per_trade", None), cfg.risk.risk_per_trade)
+    cfg.risk.max_daily_loss = ov(getattr(args, "max_daily_loss", None), cfg.risk.max_daily_loss)
+    cfg.risk.max_daily_trades = ov(getattr(args, "max_daily_trades", None), cfg.risk.max_daily_trades)
+    cfg.strategy.swing_length = ov(getattr(args, "swing_length", None), cfg.strategy.swing_length)
+    cfg.strategy.window = ov(getattr(args, "window", None), cfg.strategy.window)
+    cfg.strategy.require_fvg = ov(getattr(args, "require_fvg", None), cfg.strategy.require_fvg)
+    cfg.strategy.require_session = ov(getattr(args, "require_session", None), cfg.strategy.require_session)
     return cfg
 
 
@@ -43,17 +55,19 @@ def main(argv=None) -> int:
 
     bt = sub.add_parser("backtest", help="run a historical backtest")
     bt.add_argument("--csv", required=True, help="OHLCV csv (MT5/generic export)")
-    bt.add_argument("--symbol", default="XAUUSD")
-    bt.add_argument("--equity", type=float, default=10_000.0)
-    bt.add_argument("--risk-per-trade", type=float, default=0.005)
-    bt.add_argument("--max-daily-loss", type=float, default=0.03)
-    bt.add_argument("--max-daily-trades", type=int, default=10)
-    bt.add_argument("--swing-length", type=int, default=5)
-    bt.add_argument("--window", type=int, default=400)
-    bt.add_argument("--require-fvg", dest="require_fvg", action="store_true", default=True)
-    bt.add_argument("--no-require-fvg", dest="require_fvg", action="store_false")
-    bt.add_argument("--require-session", dest="require_session", action="store_true", default=True)
-    bt.add_argument("--no-require-session", dest="require_session", action="store_false")
+    bt.add_argument("--config", default=None, help="YAML/JSON config file (base; flags override)")
+    # overrides default to None so a --config file is only changed by flags you pass
+    bt.add_argument("--symbol", default=None)
+    bt.add_argument("--equity", type=float, default=None)
+    bt.add_argument("--risk-per-trade", type=float, default=None)
+    bt.add_argument("--max-daily-loss", type=float, default=None)
+    bt.add_argument("--max-daily-trades", type=int, default=None)
+    bt.add_argument("--swing-length", type=int, default=None)
+    bt.add_argument("--window", type=int, default=None)
+    bt.add_argument("--require-fvg", dest="require_fvg", action="store_const", const=True, default=None)
+    bt.add_argument("--no-require-fvg", dest="require_fvg", action="store_const", const=False)
+    bt.add_argument("--require-session", dest="require_session", action="store_const", const=True, default=None)
+    bt.add_argument("--no-require-session", dest="require_session", action="store_const", const=False)
     bt.add_argument("--progress-every", type=int, default=0)
 
     dash = sub.add_parser("dashboard", help="replay candles into a live SMC dashboard")
