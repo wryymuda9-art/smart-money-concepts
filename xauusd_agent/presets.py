@@ -27,10 +27,11 @@ def sample_data_path(timeframe: str = "M15") -> str:
     name = {
         "4H": "XAUUSD_4H.csv",
         "M15": "XAUUSD_M15.csv", "15M": "XAUUSD_M15.csv",
+        "M15_MULTI": "XAUUSD_M15_multi.csv", "MULTI": "XAUUSD_M15_multi.csv",
         "M5": "XAUUSD_M5.csv", "5M": "XAUUSD_M5.csv",
     }.get(timeframe.upper())
     if name is None:
-        raise ValueError("timeframe must be '4H', 'M15' or '5M'")
+        raise ValueError("timeframe must be one of 4H, M15, M15_MULTI, M5")
     return os.path.join(_DATA_DIR, name)
 
 
