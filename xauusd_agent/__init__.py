@@ -24,8 +24,11 @@ and run the agent with `Mode.LIVE`. The default everywhere is simulation.
 """
 
 from .config import (
-    AgentConfig, RiskConfig, StrategyConfig, InstrumentSpec, ManagementConfig, Mode,
+    AgentConfig, RiskConfig, StrategyConfig, InstrumentSpec, ManagementConfig,
+    NewsConfig, Mode,
 )
+from .news import NewsFilter
+from .journal import TradeJournal, save_state, load_state
 from .strategy import SMCStrategy, Signal, Side
 from .risk import RiskManager
 from .broker import SimBroker, Order, Position, OrderType
@@ -43,6 +46,11 @@ __all__ = [
     "StrategyConfig",
     "InstrumentSpec",
     "ManagementConfig",
+    "NewsConfig",
+    "NewsFilter",
+    "TradeJournal",
+    "save_state",
+    "load_state",
     "Mode",
     "SMCStrategy",
     "Signal",

@@ -123,6 +123,19 @@ class ManagementConfig:
 
 
 @dataclass
+class NewsConfig:
+    """Economic-calendar blackout. Don't trade around high-impact gold events
+    (FOMC, CPI, NFP, ...). The event list itself is supplied via a NewsFilter;
+    this just holds the windowing/behaviour.
+    """
+
+    enabled: bool = False
+    before_min: int = 30          # block new entries this many minutes before an event
+    after_min: int = 30           # ...and after
+    flatten_open: bool = False    # also close open positions when a blackout starts
+
+
+@dataclass
 class AgentConfig:
     """Top-level configuration tying every layer together."""
 
@@ -132,3 +145,4 @@ class AgentConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     management: ManagementConfig = field(default_factory=ManagementConfig)
+    news: NewsConfig = field(default_factory=NewsConfig)

@@ -99,8 +99,9 @@ class BacktestResult:
 
 
 class Backtester:
-    def __init__(self, config: AgentConfig):
+    def __init__(self, config: AgentConfig, news_filter=None):
         self.config = config
+        self.news_filter = news_filter
         self.strategy = SMCStrategy(config.strategy, config.instrument)
         self.risk = RiskManager(
             config.risk, config.instrument, starting_equity=config.starting_equity
@@ -130,6 +131,12 @@ class Backtester:
             # 1. update existing positions on this candle
             self.broker.update(h, l, c, when)
 
+            # news blackout: optionally flatten, and block new entries
+            blackout = (cfg.news.enabled and self.news_filter is not None
+                        and self.news_filter.in_blackout(when, cfg.news.before_min, cfg.news.after_min))
+            if blackout and cfg.news.flatten_open and self.broker.open_count:
+                self.broker.close_all(c, when, reason="news")
+
             equity = self.broker.equity(c)
             eq_times.append(when)
             eq_values.append(equity)
@@ -138,7 +145,7 @@ class Backtester:
             signal = self.strategy.evaluate(window)
 
             # 3. gate + size + open
-            if signal.is_trade:
+            if signal.is_trade and not blackout:
                 today = pd.Timestamp(when).date()
                 ok, _why = self.risk.can_trade(today, equity, self.broker.open_count)
                 if ok and self.risk.spread_ok(cfg.instrument.sim_spread):

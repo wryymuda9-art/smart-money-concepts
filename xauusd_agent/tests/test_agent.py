@@ -366,5 +366,69 @@ class TestTradeManagement(unittest.TestCase):
         self.assertGreater(closed[0].pnl, 0.0)                   # locked-in profit
 
 
+class TestNewsFilter(unittest.TestCase):
+    def test_blackout_window(self):
+        from xauusd_agent import NewsFilter
+        nf = NewsFilter(["2024-01-10 13:30:00"], before_min=30, after_min=30)
+        self.assertTrue(nf.in_blackout("2024-01-10 13:30:00"))   # at the event
+        self.assertTrue(nf.in_blackout("2024-01-10 13:05:00"))   # 25 min before
+        self.assertTrue(nf.in_blackout("2024-01-10 13:59:00"))   # 29 min after
+        self.assertFalse(nf.in_blackout("2024-01-10 12:30:00"))  # 60 min before
+        self.assertFalse(nf.in_blackout("2024-01-10 14:30:00"))  # 60 min after
+        self.assertFalse(nf.in_blackout("2024-01-09 13:30:00"))  # day before
+
+    def test_empty_filter_never_blacks_out(self):
+        from xauusd_agent import NewsFilter
+        self.assertFalse(NewsFilter([]).in_blackout("2024-01-10 13:30:00"))
+
+    def test_blackout_blocks_entries_in_backtest(self):
+        from xauusd_agent import AgentConfig, Mode, NewsFilter
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.backtest import Backtester
+        ohlc = load_csv(sample_data_path("M15")).head(900)
+        cfg = xauusd_config(timeframe="15M"); cfg.strategy.window = 150
+        cfg.strategy.require_session = False; cfg.strategy.require_fvg = False
+        base_trades = len(Backtester(cfg).run(ohlc).trades)
+        self.assertGreater(base_trades, 0)
+        # blackout the entire span -> no new entries can open
+        cfg.news.enabled = True
+        cfg.news.before_min = cfg.news.after_min = 10 ** 7
+        nf = NewsFilter([ohlc.index[len(ohlc) // 2]])
+        blocked_trades = len(Backtester(cfg, news_filter=nf).run(ohlc).trades)
+        self.assertLess(blocked_trades, base_trades)
+
+
+class TestJournalAndState(unittest.TestCase):
+    def test_journal_round_trip(self):
+        import tempfile, os
+        from xauusd_agent import TradeJournal
+        path = os.path.join(tempfile.mkdtemp(), "j.jsonl")
+        j = TradeJournal(path)
+        j.log("entry", when=pd.Timestamp("2024-01-01 09:00"), side="long", lots=0.21)
+        j.log("exit", pnl=42.0, reason="target")
+        rows = j.read()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["event"], "entry")
+        self.assertEqual(rows[0]["side"], "long")
+        self.assertEqual(rows[1]["pnl"], 42.0)
+
+    def test_state_save_load(self):
+        import tempfile, os
+        from datetime import date
+        from xauusd_agent import RiskConfig, InstrumentSpec, RiskManager, save_state, load_state
+        rm = RiskManager(RiskConfig(), InstrumentSpec(), 10_000.0)
+        rm.can_trade(date(2024, 1, 1), 10_000.0, 0)  # establish the day baseline
+        rm.can_trade(date(2024, 1, 1), 9_600.0, 0)   # -4% -> trips the daily loss halt
+        rm.register_fill()
+        path = os.path.join(tempfile.mkdtemp(), "s.json")
+        save_state(rm, path)
+        rm2 = RiskManager(RiskConfig(), InstrumentSpec(), 10_000.0)
+        self.assertTrue(load_state(rm2, path))
+        self.assertEqual(rm2._trades_today, 1)
+        self.assertTrue(rm2._halted_today)
+        self.assertEqual(rm2._day, date(2024, 1, 1))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

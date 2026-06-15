@@ -34,8 +34,10 @@ class StepResult:
 
 
 class TradingAgent:
-    def __init__(self, config: AgentConfig, broker=None):
+    def __init__(self, config: AgentConfig, broker=None, news_filter=None, journal=None):
         self.config = config
+        self.news_filter = news_filter
+        self.journal = journal
         self.strategy = SMCStrategy(config.strategy, config.instrument)
         self.risk = RiskManager(
             config.risk, config.instrument, starting_equity=config.starting_equity
@@ -55,7 +57,7 @@ class TradingAgent:
     # -- backtest ---------------------------------------------------------------
 
     def backtest(self, ohlc: pd.DataFrame, progress_every: int = 0) -> BacktestResult:
-        bt = Backtester(self.config)
+        bt = Backtester(self.config, news_filter=self.news_filter)
         return bt.run(ohlc, progress_every=progress_every)
 
     # -- live / paper step ------------------------------------------------------
@@ -85,9 +87,18 @@ class TradingAgent:
                 when,
             )
 
+        # news blackout: optionally flatten, and block new entries
+        blackout = (self.config.news.enabled and self.news_filter is not None
+                    and self.news_filter.in_blackout(
+                        when, self.config.news.before_min, self.config.news.after_min))
+        if blackout and self.config.news.flatten_open and isinstance(self.broker, SimBroker):
+            self.broker.close_all(last_close, when, reason="news")
+
         signal = self.strategy.evaluate(window)
         if not signal.is_trade:
             return StepResult(signal, False, signal.reason)
+        if blackout:
+            return StepResult(signal, False, "news blackout")
 
         today = pd.Timestamp(when).date()
         equity = self._equity(last_close)
@@ -115,4 +126,8 @@ class TradingAgent:
         else:
             self.broker.place(order, ref_price=last_close, when=when)
         self.risk.register_fill()
+        if self.journal is not None:
+            self.journal.log("entry", when, side=signal.side.value, lots=sizing.lots,
+                             entry=last_close, stop=signal.stop, take_profit=signal.take_profit,
+                             reason=signal.reason)
         return StepResult(signal, True, "order placed", lots=sizing.lots)
