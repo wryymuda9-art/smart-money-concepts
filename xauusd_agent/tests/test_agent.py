@@ -463,5 +463,18 @@ class TestConfigIO(unittest.TestCase):
         self.assertTrue(cfg.management.trailing_enabled)
 
 
+class TestReport(unittest.TestCase):
+    def test_build_report_figure(self):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.backtest import Backtester
+        from xauusd_agent.report import build_report_figure
+        cfg = xauusd_config(timeframe="4H"); cfg.strategy.window = 120
+        result = Backtester(cfg).run(load_csv(sample_data_path("4H")).head(700))
+        fig = build_report_figure(result, title="test")
+        # equity + drawdown traces present, no exception building it
+        self.assertGreaterEqual(len(fig.data), 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

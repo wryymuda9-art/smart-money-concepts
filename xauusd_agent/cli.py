@@ -69,6 +69,8 @@ def main(argv=None) -> int:
     bt.add_argument("--require-session", dest="require_session", action="store_const", const=True, default=None)
     bt.add_argument("--no-require-session", dest="require_session", action="store_const", const=False)
     bt.add_argument("--progress-every", type=int, default=0)
+    bt.add_argument("--report-html", default=None, help="write a performance tearsheet (HTML)")
+    bt.add_argument("--report-png", default=None, help="write a performance tearsheet (PNG)")
 
     dash = sub.add_parser("dashboard", help="replay candles into a live SMC dashboard")
     dash.add_argument("--csv", required=True, help="OHLCV csv (MT5/generic export)")
@@ -141,6 +143,11 @@ def main(argv=None) -> int:
         result = Backtester(cfg).run(ohlc, progress_every=args.progress_every)
         print(result)
         print(json.dumps(result.summary(), indent=2))
+        if args.report_html or args.report_png:
+            from .report import save_report
+            save_report(result, html_path=args.report_html, png_path=args.report_png,
+                        title=f"{cfg.instrument.symbol} · SMC Agent")
+            print(f"report -> {args.report_html or ''} {args.report_png or ''}".strip())
         return 0
 
     if args.command == "dashboard":
