@@ -14,12 +14,42 @@ from __future__ import annotations
 
 import os
 
-from .config import AgentConfig, ManagementConfig, Mode
+from .config import AgentConfig, ManagementConfig, InstrumentSpec, Mode
 
 _DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "tests", "test_data", "XAUUSD",
 )
+
+
+def justmarkets_instrument(account_type: str = "standard",
+                           sim_spread: float = None,
+                           commission_per_lot: float = None,
+                           max_lot: float = 50.0) -> InstrumentSpec:
+    """XAUUSD instrument spec for the JustMarkets broker.
+
+    Contract specs are standard across JustMarkets accounts (100 oz/lot, 0.01 lot
+    step). **Spread and commission depend on the account type** — pass the real
+    numbers from your account (Account -> Instrument specs / contract details) via
+    ``sim_spread`` (price units, USD per ounce) and ``commission_per_lot`` (USD,
+    round-turn). The per-account values below are reasonable placeholders to be
+    CONFIRMED, not official quotes.
+    """
+    defaults = {
+        "standard": (0.25, 0.0),   # spread-only, no commission
+        "pro": (0.18, 0.0),        # tighter spread, no commission
+        "raw": (0.10, 6.0),        # near-zero spread + round-turn commission
+        "cent": (0.30, 0.0),       # like standard (cent lots)
+    }
+    spr, comm = defaults.get(account_type.lower(), defaults["standard"])
+    return InstrumentSpec(
+        symbol="XAUUSD", contract_size=100.0, money_per_price_per_lot=100.0,
+        min_lot=0.01, lot_step=0.01, max_lot=max_lot,
+        sim_spread=(spr if sim_spread is None else sim_spread),
+        sim_slippage=0.03,
+        commission_per_lot=(comm if commission_per_lot is None else commission_per_lot),
+        max_spread=0.50,
+    )
 
 
 def sample_data_path(timeframe: str = "M15") -> str:
@@ -38,7 +68,9 @@ def sample_data_path(timeframe: str = "M15") -> str:
 def xauusd_config(mode: Mode = Mode.BACKTEST, timeframe: str = "5M",
                   starting_equity: float = 10_000.0,
                   with_management: bool = False,
-                  management_style: str = "runner") -> AgentConfig:
+                  management_style: str = "runner",
+                  broker: str = "justmarkets", account_type: str = "pro",
+                  instrument=None) -> AgentConfig:
     """A sensible XAUUSD config tuned for the given timeframe.
 
     * **5M / scalping** — tight structure, kill-zone timing on, FVG confluence on.
@@ -57,6 +89,12 @@ def xauusd_config(mode: Mode = Mode.BACKTEST, timeframe: str = "5M",
     """
     cfg = AgentConfig(mode=mode, starting_equity=starting_equity)
     tf = timeframe.upper()
+
+    # broker cost model
+    if instrument is not None:
+        cfg.instrument = instrument
+    elif broker and broker.lower() == "justmarkets":
+        cfg.instrument = justmarkets_instrument(account_type)
 
     if with_management:
         if management_style == "balanced":

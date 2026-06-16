@@ -5,15 +5,16 @@
 mode: backtest
 starting_equity: 10000
 
-instrument:
+instrument:                        # JustMarkets Pro account (placeholders - confirm)
   symbol: XAUUSD
   money_per_price_per_lot: 100.0   # USD P/L per 1.0 price move per 1.0 lot (gold)
   min_lot: 0.01
   lot_step: 0.01
+  max_lot: 50.0
   max_spread: 0.50
-  sim_spread: 0.20                 # assumed cost in backtest (price units)
+  sim_spread: 0.18                 # JustMarkets Pro typical gold spread (price units)
   sim_slippage: 0.03
-  commission_per_lot: 0.0
+  commission_per_lot: 0.0          # Pro = spread-only, no commission
 
 risk:
   risk_per_trade: 0.005            # 0.5% of equity per trade

@@ -40,7 +40,7 @@ from .agent import TradingAgent
 from .viz import LiveDashboard, DashboardConfig, build_figure
 from .feed import CsvDataFeed, Mt5DataFeed
 from .live import run_live, run_live_replay
-from .presets import xauusd_config, sample_data_path
+from .presets import xauusd_config, sample_data_path, justmarkets_instrument
 from .research import compute_metrics, sweep, walk_forward, WalkForwardResult
 
 __all__ = [
@@ -83,6 +83,7 @@ __all__ = [
     "run_live_replay",
     "xauusd_config",
     "sample_data_path",
+    "justmarkets_instrument",
     "compute_metrics",
     "sweep",
     "walk_forward",
