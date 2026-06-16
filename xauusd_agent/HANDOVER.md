@@ -4,9 +4,11 @@ A complete, honest summary of what was built, how to run it, what the results
 actually say, and what it would take to make it a profitable, live bot.
 
 > **One-line status:** a fully built, tested, deployable XAUUSD scalping/day-trading
-> bot whose *machinery* is complete and trustworthy, but whose *trading edge is
-> unproven* — and on the only real data available it **underperformed buy-and-hold**.
-> Educational project; not investment advice; do not trade real money on it as-is.
+> bot with a **small, validated, low-drawdown positive edge** on 13 months of
+> multi-regime M15 data (out-of-sample walk-forward +5.9%, PF 1.70, ~2% max DD) —
+> credible but not yet statistically conclusive, and it trails buy-and-hold in a
+> gold bull market. Educational project; not investment advice; do not trade real
+> money on it as-is.
 
 ---
 
@@ -80,37 +82,52 @@ block, target nearest opposing liquidity or a fixed R. Then risk gates + sizing.
 
 ## 4. Honest results (real XAUUSD data)
 
-All on $10,000, 0.5% risk/trade, costs included. **Bundled data is short** (4H:
-2020–22; M15: ~2 months 2025–26; M5: ~4 weeks 2026), so every result is
-statistically `weak`/`none`.
+All on $10,000, 0.5% risk/trade, costs included. The headline test is the
+**13-month multi-regime M15 dataset** (`XAUUSD_M15_multi.csv`, ~7,504 candles,
+2025-03 .. 2026-04, gold $2,970–$5,419, ~20 stitched segments across regimes).
 
-| Style | Best config | Return | Max DD | PF | Trades | Significance |
+**Day-trade M15 (multi-regime), in-sample:**
+
+| Config | Return | Max DD | Ret/DD | PF | Win | Significance |
 |---|---|---|---|---|---|---|
-| Swing 4H | strict | −0.7% | −2.1% | 0.73 | 13 | none |
-| Day-trade M15 | baseline | −0.9% | −2.9% | 0.95 | 57 | weak |
-| **Day-trade M15** | **+ partial TP & trailing** | **+1.9%** | −3.1% | 1.14 | 102* | weak |
-| Scalp M5 | + HTF filter | +1.3% | −3.1% | 1.15 | 33 | weak |
+| baseline (no management) | +3.9% | −5.3% | 0.74 | 1.11 | 39% | moderate |
+| + management (partial+trail) | +5.2% | −3.4% | 1.53 | 1.17 | 61% | moderate |
+| **+ "let winners run"** ⭐ | **+17.4%** | −7.9% | **2.22** | **1.50** | 36% | moderate |
 
-\* partial take-profits split each trade into 2 legs, inflating the count.
+**Out-of-sample (walk-forward, the honest number):**
+
+| Profile | OOS return | OOS PF | OOS max DD | OOS trades |
+|---|---|---|---|---|
+| + management | +2.6% | 1.30 | −2.1% | 63 |
+| **+ "let winners run"** | **+5.9%** | **1.70** | −2.1% | 40 |
 
 **Key honest findings:**
-1. **Trade management helped** — partial-TP + trailing lifted M15 from PF 0.95→1.14
-   (−0.9% → +1.9%). The biggest single structural improvement.
-2. **Parameter tuning could NOT be validated.** Walk-forward showed in-sample
-   performance had *no* relationship to out-of-sample (one fold IS PF 0.35 → OOS
-   4.76; another IS 3.82 → OOS 0.32). Optimising on this little data fits noise.
-3. **Monte-Carlo (5,000 sims) on the +1.9% config:** distribution −3.6%..+7.5%,
-   **73% chance of profit** — a weak, low-conviction edge.
-4. **Buy-and-hold over the same window returned +10.1%.** The active strategy
-   captured +1.9% of a +10% gold rally — **it badly underperformed simply holding.**
+1. **More data revealed a real edge.** On 2 months the strategy looked like noise
+   (`weak`/`none`, underperformed); on 13 multi-regime months it reaches `moderate`
+   significance and is consistently positive. Monte-Carlo (5,000 sims): **84%
+   probability of profit**.
+2. **"Let winners run" is a *validated* improvement.** Dropping the early partial
+   and trailing wide (3R) **doubled the out-of-sample return (+2.6% → +5.9%, PF
+   1.30 → 1.70) at the same ~2% drawdown.** It survived walk-forward — not
+   curve-fitting. Now the default (`with_management=True`, `management_style="runner"`).
+3. **Leverage is not improvement.** Raising risk 0.5%→2% scaled return to +21% but
+   drawdown to −21% (Ret/DD fell to 1.00). Adding positions hurt (Ret/DD 0.34).
+   Keep risk at 0.5% until the edge is proven on clean data.
+4. **It still trails buy-and-hold** (+57.7% over the same gold bull run) in raw
+   return — but at ~1/8th the drawdown, far less exposure, and the ability to
+   profit in ranges/bears. A risk-managed all-weather overlay, not a gold-bull proxy.
+5. **Still not conclusive.** Best out-of-sample sample is 40–63 trades (`weak`).
+   Encouraging and validated, but a clean multi-year export is needed for `ok`.
 
 ## 5. What this does and does NOT establish
 
 * ✅ The engine runs end-to-end on real gold, sizes risk correctly, contains
   drawdown (~2–3%), and is safe/observable (news blackout, journal, restart state).
-* ❌ It does **not** show a profitable edge. On the one measurable period it lagged
-  the benchmark. The data is too short and single-regime (a trend) to conclude
-  anything durable — and what we can measure is unflattering.
+* ✅ On 13 months of multi-regime data it shows a **small, positive, out-of-sample
+  edge** (+5.9% OOS, PF 1.70) — credible, low-drawdown, and validated by walk-forward.
+* ❌ It is **not yet conclusive** (40–63 OOS trades = `weak`), and it **underperforms
+  buy-and-hold** in a gold bull market on raw return. A clean continuous multi-year
+  export is needed to confirm the edge is durable rather than a lucky patchwork.
 
 ## 6. The path to a real, live-ready edge
 
