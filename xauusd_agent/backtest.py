@@ -99,9 +99,10 @@ class BacktestResult:
 
 
 class Backtester:
-    def __init__(self, config: AgentConfig, news_filter=None):
+    def __init__(self, config: AgentConfig, news_filter=None, macro_bias=None):
         self.config = config
         self.news_filter = news_filter
+        self.macro_bias = macro_bias
         self.strategy = SMCStrategy(config.strategy, config.instrument)
         self.risk = RiskManager(
             config.risk, config.instrument, starting_equity=config.starting_equity
@@ -144,8 +145,14 @@ class Backtester:
             # 2. ask the strategy
             signal = self.strategy.evaluate(window)
 
+            # macro bias: skip setups that fight gold's macro direction
+            against_macro = (cfg.macro.enabled and self.macro_bias is not None
+                             and cfg.macro.mode == "filter"
+                             and not self.macro_bias.allows(
+                                 when, 1 if signal.side is Side.LONG else -1))
+
             # 3. gate + size + open
-            if signal.is_trade and not blackout:
+            if signal.is_trade and not blackout and not against_macro:
                 today = pd.Timestamp(when).date()
                 ok, _why = self.risk.can_trade(today, equity, self.broker.open_count)
                 if ok and self.risk.spread_ok(cfg.instrument.sim_spread):

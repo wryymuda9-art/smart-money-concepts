@@ -25,9 +25,10 @@ and run the agent with `Mode.LIVE`. The default everywhere is simulation.
 
 from .config import (
     AgentConfig, RiskConfig, StrategyConfig, InstrumentSpec, ManagementConfig,
-    NewsConfig, Mode,
+    NewsConfig, MacroConfig, Mode,
 )
 from .news import NewsFilter
+from .macro import MacroBias
 from .journal import TradeJournal, save_state, load_state
 from .configio import load_config, save_config, config_from_dict, config_to_dict
 from .report import build_report_figure, save_report
@@ -51,6 +52,8 @@ __all__ = [
     "ManagementConfig",
     "NewsConfig",
     "NewsFilter",
+    "MacroConfig",
+    "MacroBias",
     "TradeJournal",
     "save_state",
     "load_state",

@@ -136,6 +136,20 @@ class NewsConfig:
 
 
 @dataclass
+class MacroConfig:
+    """Macro/news directional bias for gold. Supplied via a MacroBias object
+    (derived from the USD index / yields, or an explicit bias series).
+
+    The core encoded relationship is **USD up -> gold down**: when the macro bias
+    opposes a setup, we step aside (``mode="filter"``), trading only setups that
+    agree with gold's macro direction.
+    """
+
+    enabled: bool = False
+    mode: str = "filter"          # "filter" = block setups opposing the macro bias
+
+
+@dataclass
 class AgentConfig:
     """Top-level configuration tying every layer together."""
 
@@ -146,3 +160,4 @@ class AgentConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     management: ManagementConfig = field(default_factory=ManagementConfig)
     news: NewsConfig = field(default_factory=NewsConfig)
+    macro: MacroConfig = field(default_factory=MacroConfig)

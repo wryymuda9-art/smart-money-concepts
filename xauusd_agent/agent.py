@@ -34,9 +34,11 @@ class StepResult:
 
 
 class TradingAgent:
-    def __init__(self, config: AgentConfig, broker=None, news_filter=None, journal=None):
+    def __init__(self, config: AgentConfig, broker=None, news_filter=None,
+                 macro_bias=None, journal=None):
         self.config = config
         self.news_filter = news_filter
+        self.macro_bias = macro_bias
         self.journal = journal
         self.strategy = SMCStrategy(config.strategy, config.instrument)
         self.risk = RiskManager(
@@ -57,7 +59,8 @@ class TradingAgent:
     # -- backtest ---------------------------------------------------------------
 
     def backtest(self, ohlc: pd.DataFrame, progress_every: int = 0) -> BacktestResult:
-        bt = Backtester(self.config, news_filter=self.news_filter)
+        bt = Backtester(self.config, news_filter=self.news_filter,
+                        macro_bias=self.macro_bias)
         return bt.run(ohlc, progress_every=progress_every)
 
     # -- live / paper step ------------------------------------------------------
@@ -99,6 +102,13 @@ class TradingAgent:
             return StepResult(signal, False, signal.reason)
         if blackout:
             return StepResult(signal, False, "news blackout")
+
+        # macro bias: skip setups that fight gold's macro direction
+        if (self.config.macro.enabled and self.macro_bias is not None
+                and self.config.macro.mode == "filter"
+                and not self.macro_bias.allows(
+                    when, 1 if signal.side is Side.LONG else -1)):
+            return StepResult(signal, False, "against macro bias")
 
         today = pd.Timestamp(when).date()
         equity = self._equity(last_close)

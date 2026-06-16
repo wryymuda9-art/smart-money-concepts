@@ -21,7 +21,7 @@ from typing import Any, Dict
 
 from .config import (
     AgentConfig, InstrumentSpec, RiskConfig, StrategyConfig, ManagementConfig,
-    NewsConfig, Mode,
+    NewsConfig, MacroConfig, Mode,
 )
 
 _SECTIONS = {
@@ -30,6 +30,7 @@ _SECTIONS = {
     "strategy": StrategyConfig,
     "management": ManagementConfig,
     "news": NewsConfig,
+    "macro": MacroConfig,
 }
 
 

@@ -95,6 +95,47 @@ before enabling live):
   `htf_multiplier` candles (e.g. M15 base → H1 bias). Stops you trading LTF setups
   against the HTF trend.
 
+### Macro / news bias filter (opt-in)
+
+Gold is a macro instrument: the strongest, most reliable driver is the **US
+dollar — USD up ⇒ gold down**. `macro.py` turns that into a directional bias
+(`+1` bullish / `-1` bearish / `0` neutral) the agent uses as a **filter**: it
+takes only SMC setups that *agree* with gold's macro direction and steps aside on
+the ones fighting it. It does **not** try to predict or trade the news headline —
+that layer is the noisiest and hardest to validate. This is an odds tilt, not a
+prophecy.
+
+Two complementary layers:
+
+- **Event blackout** (`news.py`, `NewsConfig`) — flatten/stand down around
+  scheduled high-impact events (CPI, FOMC, NFP). *Avoid* the chaos.
+- **Macro bias** (`macro.py`, `MacroConfig`) — *bias* entries with the prevailing
+  USD direction. Off by default (`macro.enabled = False`).
+
+Plug data in two ways:
+
+```python
+from xauusd_agent import MacroBias, Backtester
+
+# 1. derive gold's bias from the US Dollar Index trend (DXY up -> gold bearish)
+macro = MacroBias.from_dxy(dxy_ohlc, lookback=20)   # dxy_ohlc: datetime-indexed 'close'
+
+# 2. or supply any bias series you compute (real yields, your own view, a
+#    calendar-surprise model): a datetime-indexed series of -1 / 0 / +1
+macro = MacroBias.from_series(my_bias_df, col="bias")
+
+cfg.macro.enabled = True
+result = Backtester(cfg, macro_bias=macro).run(ohlc)   # or TradingAgent(cfg, macro_bias=macro)
+```
+
+`bias_at(ts)` looks up the most recent bias at/before a timestamp (no look-ahead);
+`allows(ts, direction)` answers whether a long (`+1`) or short (`-1`) agrees. For
+backtests, feed a DXY CSV aligned to your gold period; for live, refresh the bias
+from your DXY feed or an economic-calendar API on each loop. **Honest caveat:**
+these are tendencies, not certainties — gold can rally on inflation fear with a
+firm dollar, and moves are often pre-priced. Validate with the walk-forward before
+trusting it live.
+
 ## Risk management & position sizing
 
 Fixed-fractional risk — the loss if the stop is hit is ~`risk_per_trade` of equity
@@ -306,7 +347,8 @@ by `smartmoneyconcepts`). Extra features:
 - ✅ Visual live dashboard (`viz.py`).
 - ✅ Liquidity-sweep entry trigger and multi-timeframe bias (`require_liquidity_sweep`, `require_htf_alignment`).
 - ✅ Walk-forward optimisation and parameter sweeps over the confluence toggles (`research.py`).
+- ✅ News-blackout filter + macro/USD directional bias (`news.py`, `macro.py`).
 - Trailing stops / partial take-profits / break-even moves.
 - Per-session and per-day-of-week performance attribution.
-- News-blackout filter (gold is very sensitive to USD/CPI/FOMC).
+- Live economic-calendar ingestion to drive the event blackout + macro bias automatically.
 ```

@@ -508,5 +508,58 @@ class TestRobustness(unittest.TestCase):
         self.assertIn("trades", mc)
 
 
+class TestMacroBias(unittest.TestCase):
+    def test_from_dxy_inverts_dollar_trend(self):
+        from xauusd_agent import MacroBias
+        idx = pd.date_range("2024-01-01", periods=40, freq="4h")
+        # steadily rising dollar -> gold should read bearish (-1)
+        up = pd.DataFrame({"close": np.linspace(100, 110, 40)}, index=idx)
+        mb = MacroBias.from_dxy(up, lookback=5)
+        self.assertEqual(mb.bias_at(idx[-1]), -1)
+        # steadily falling dollar -> gold bullish (+1)
+        down = pd.DataFrame({"close": np.linspace(110, 100, 40)}, index=idx)
+        self.assertEqual(MacroBias.from_dxy(down, lookback=5).bias_at(idx[-1]), 1)
+
+    def test_bias_at_uses_most_recent_past(self):
+        from xauusd_agent import MacroBias
+        s = pd.Series([1, -1], index=pd.to_datetime(["2024-01-01", "2024-01-10"]))
+        mb = MacroBias(s)
+        self.assertEqual(mb.bias_at("2023-12-01"), 0)   # before series -> neutral
+        self.assertEqual(mb.bias_at("2024-01-05"), 1)   # carries 01-01 forward
+        self.assertEqual(mb.bias_at("2024-01-20"), -1)
+
+    def test_allows_only_aligned_or_neutral(self):
+        from xauusd_agent import MacroBias
+        mb = MacroBias(pd.Series([1], index=pd.to_datetime(["2024-01-01"])))
+        self.assertTrue(mb.allows("2024-01-02", 1))    # long with bullish bias
+        self.assertFalse(mb.allows("2024-01-02", -1))  # short fights bullish bias
+        # neutral bias allows either direction
+        flat = MacroBias(pd.Series([0], index=pd.to_datetime(["2024-01-01"])))
+        self.assertTrue(flat.allows("2024-01-02", -1))
+
+    def test_filter_only_removes_trades(self):
+        from xauusd_agent import MacroBias
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.backtest import Backtester
+        import copy
+        ohlc = load_csv(sample_data_path("4H")).head(800)
+        cfg = xauusd_config(timeframe="4H")
+        cfg.strategy.window = 120
+        cfg.strategy.require_fvg = False
+        base = len(Backtester(cfg).run(ohlc).trades)
+        # a constant bearish bias can only suppress longs, never add trades
+        bias = pd.Series(-1, index=ohlc.index)
+        mcfg = copy.deepcopy(cfg)
+        mcfg.macro.enabled = True
+        filtered = Backtester(mcfg, macro_bias=MacroBias(bias)).run(ohlc).trades
+        self.assertLessEqual(len(filtered), base)
+        self.assertTrue(all(t.position.side is Side.SHORT for t in filtered))
+
+    def test_disabled_by_default(self):
+        from xauusd_agent import AgentConfig
+        self.assertFalse(AgentConfig().macro.enabled)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
