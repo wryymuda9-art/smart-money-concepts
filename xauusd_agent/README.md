@@ -94,6 +94,12 @@ before enabling live):
   to agree with a higher-timeframe bias built by aggregating every
   `htf_multiplier` candles (e.g. M15 base → H1 bias). Stops you trading LTF setups
   against the HTF trend.
+- **Regime / trend-participation** (`regime_enabled`) — classify trend vs range with
+  the Kaufman Efficiency Ratio (`regime_lookback`, `regime_er_threshold`). In a
+  trend, trade only *with* it (`regime_block_counter_trend`) and widen the target
+  (`regime_trend_rr`, default 6R) so winners run with the move instead of scalping
+  out — the fix for trailing buy-and-hold in trending markets. In ranges, behave as
+  normal SMC. Try it via `python -m xauusd_agent validate --csv data.csv --regime`.
 
 ### Macro / news bias filter (opt-in)
 

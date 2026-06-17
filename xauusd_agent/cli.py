@@ -150,6 +150,8 @@ def main(argv=None) -> int:
     val.add_argument("--dxy-csv", dest="dxy_csv", default=None,
                      help="US Dollar Index csv -> enable the macro bias filter")
     val.add_argument("--dxy-lookback", dest="dxy_lookback", type=int, default=20)
+    val.add_argument("--regime", action="store_true",
+                     help="enable trend/range regime mode (trade with trends, let winners run)")
 
     args = parser.parse_args(argv)
 
@@ -270,6 +272,9 @@ def main(argv=None) -> int:
         base = xauusd_config(mode=Mode.BACKTEST, timeframe=args.tf,
                              starting_equity=args.equity,
                              with_management=True, management_style="runner")
+        if args.regime:
+            base.strategy.regime_enabled = True
+            print("regime mode: ON (trade with trends, widen target)")
         path = args.csv or sample_data_path(args.timeframe)
         ohlc = load_csv(path)
         days = pd.Series(ohlc.index.date).nunique()

@@ -182,6 +182,26 @@ class SMCStrategy:
                 return True
         return False
 
+    def _regime(self, window: pd.DataFrame):
+        """Classify the recent market as ('trend'|'range', trend_dir).
+
+        Uses the Kaufman Efficiency Ratio over ``regime_lookback`` bars:
+        ER = |close[t]-close[t-n]| / sum(|close diffs|). ER -> 1 means a clean
+        directional move (trend); ER -> 0 means chop (range). ``trend_dir`` is the
+        sign of the net move (1 up / -1 down / 0 flat). Causal: uses only closed bars.
+        """
+        n = self.cfg.regime_lookback
+        closes = window["close"].values
+        if len(closes) <= n + 1:
+            return ("range", 0)
+        seg = closes[-(n + 1):]
+        net = seg[-1] - seg[0]
+        path = float(np.abs(np.diff(seg)).sum())
+        er = abs(net) / path if path > 0 else 0.0
+        if er >= self.cfg.regime_er_threshold:
+            return ("trend", 1 if net > 0 else (-1 if net < 0 else 0))
+        return ("range", 0)
+
     def _htf_bias(self, window: pd.DataFrame) -> Optional[Side]:
         """Bias from a higher timeframe built by aggregating every N candles.
 
@@ -223,6 +243,17 @@ class SMCStrategy:
             return Signal(side=Side.NONE, reason="no structural bias")
 
         direction = 1 if bias is Side.LONG else -1
+
+        # Regime / trend-participation: in a trend, optionally only trade WITH it and
+        # widen the target so winners run; in a range, behave as normal SMC.
+        rr = cfg.default_rr
+        regime, trend_dir = ("range", 0)
+        if cfg.regime_enabled:
+            regime, trend_dir = self._regime(window)
+            if regime == "trend" and trend_dir != 0:
+                if cfg.regime_block_counter_trend and direction != trend_dir:
+                    return Signal(side=Side.NONE, reason="counter-trend in trend regime")
+                rr = cfg.regime_trend_rr      # let winners run with the trend
 
         # Multi-timeframe confluence: entry must agree with the higher-timeframe bias.
         if cfg.require_htf_alignment:
@@ -267,7 +298,7 @@ class SMCStrategy:
                 liq = smc.liquidity(window, shl, range_percent=cfg.liquidity_range_percent)
                 target = self._nearest_liquidity(liq, 1, entry, last)
             if target is None or target <= entry:
-                target = entry + cfg.default_rr * (entry - stop)
+                target = entry + rr * (entry - stop)
             side = Side.LONG
         else:
             entry = close
@@ -277,7 +308,7 @@ class SMCStrategy:
                 liq = smc.liquidity(window, shl, range_percent=cfg.liquidity_range_percent)
                 target = self._nearest_liquidity(liq, -1, entry, last)
             if target is None or target >= entry:
-                target = entry - cfg.default_rr * (stop - entry)
+                target = entry - rr * (stop - entry)
             side = Side.SHORT
 
         if abs(entry - stop) <= 0:
@@ -289,7 +320,8 @@ class SMCStrategy:
             stop=stop,
             take_profit=target,
             reason=f"{bias.value} OB tap"
-            + (" + FVG" if has_fvg else ""),
+            + (" + FVG" if has_fvg else "")
+            + (f" [{regime}]" if cfg.regime_enabled else ""),
             ob_top=ob_top,
             ob_bottom=ob_bottom,
             ob_strength=ob_strength,

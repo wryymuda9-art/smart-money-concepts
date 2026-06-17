@@ -93,6 +93,17 @@ class StrategyConfig:
     require_htf_alignment: bool = False
     htf_multiplier: int = 4               # e.g. base M15 -> H1 bias
 
+    # --- Regime / trend-participation mode (optional, off by default) ---------
+    # Classify the market as trending vs ranging with the Kaufman Efficiency Ratio
+    # (net move / total path over `regime_lookback` bars). When trending, optionally
+    # trade only WITH the trend and widen the target so winners run with the move —
+    # the fix for scalping out of big trends. In ranges, behave as normal SMC.
+    regime_enabled: bool = False
+    regime_lookback: int = 50             # bars for efficiency ratio + trend slope
+    regime_er_threshold: float = 0.30     # ER above this => "trending"
+    regime_block_counter_trend: bool = True   # in a trend, skip counter-trend setups
+    regime_trend_rr: float = 6.0          # fallback reward:risk used in trends (let winners run)
+
 
 @dataclass
 class ManagementConfig:

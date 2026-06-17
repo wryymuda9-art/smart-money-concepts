@@ -575,6 +575,45 @@ class TestMacroBias(unittest.TestCase):
         self.assertEqual(mb.bias_at(idx[-1]), -1)   # rising dollar -> gold bearish
 
 
+class TestRegimeMode(unittest.TestCase):
+    def setUp(self):
+        from xauusd_agent import InstrumentSpec, StrategyConfig, SMCStrategy
+        self.s = SMCStrategy(StrategyConfig(regime_lookback=50), InstrumentSpec())
+
+    def _win(self, closes):
+        idx = pd.date_range("2024-01-01", periods=len(closes), freq="15min")
+        c = np.asarray(closes, float)
+        return pd.DataFrame({"open": c, "high": c + 0.1, "low": c - 0.1,
+                             "close": c, "volume": 1.0}, index=idx)
+
+    def test_classifies_trend_and_range(self):
+        up = self._win(np.linspace(2000, 2100, 60))      # clean rise
+        self.assertEqual(self.s._regime(up), ("trend", 1))
+        down = self._win(np.linspace(2100, 2000, 60))
+        self.assertEqual(self.s._regime(down), ("trend", -1))
+        chop = self._win(2000 + np.tile([0, 5, 0, 5], 15))  # oscillating, no net move
+        self.assertEqual(self.s._regime(chop)[0], "range")
+
+    def test_off_by_default(self):
+        from xauusd_agent import StrategyConfig
+        self.assertFalse(StrategyConfig().regime_enabled)
+
+    def test_regime_only_filters_entries(self):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.backtest import Backtester
+        import copy
+        ohlc = load_csv(sample_data_path("4H")).head(800)
+        base = xauusd_config(timeframe="4H")
+        base.strategy.window = 150
+        base.strategy.require_fvg = False
+        n_off = len(Backtester(base).run(ohlc).trades)
+        on = copy.deepcopy(base)
+        on.strategy.regime_enabled = True   # counter-trend block can only remove entries
+        n_on = len(Backtester(on).run(ohlc).trades)
+        self.assertLessEqual(n_on, n_off)
+
+
 class TestValidateCommand(unittest.TestCase):
     def test_validate_runs_and_gives_verdict(self):
         import io, contextlib

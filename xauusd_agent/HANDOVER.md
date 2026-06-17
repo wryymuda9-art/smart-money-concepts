@@ -149,9 +149,12 @@ In priority order — note that **#1 gates everything**; further code is seconda
    paged, so multi-year pulls aren't truncated) or a data vendor. Then run
    `python -m xauusd_agent validate --csv your_gold.csv` for a one-shot verdict.
    Until the OOS sample is ~100+ trades, no result here means anything.
-2. **Beat the benchmark.** The strategy must be judged vs buy-and-hold. If it can't
-   beat holding in trends, it needs a trend-participation mode (e.g. let winners run
-   far past fixed targets, or a regime filter that only mean-reverts in ranges).
+2. **Beat the benchmark.** The strategy must be judged vs buy-and-hold. A
+   **regime/trend-participation mode** now ships for exactly this
+   (`strategy.regime_enabled`, or `validate --regime`): a Kaufman Efficiency Ratio
+   classifies trend vs range; in a trend it trades only *with* the move and widens
+   the target (`regime_trend_rr`, default 6R) so winners run instead of scalping
+   out. Off by default — needs real multi-year data to confirm it earns its keep.
 3. **Realistic costs.** Add commission and variable/news-widened spread before
    trusting any backtest, especially for scalping.
 4. **Validate before risking money:** walk-forward green → demo/paper forward-test
