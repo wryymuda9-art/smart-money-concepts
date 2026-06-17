@@ -156,17 +156,38 @@ class Mt5DataFeed:
         return df.tail(n)
 
     def copy_range(self, start, end) -> pd.DataFrame:
-        """Historical bars between two datetimes (for downloads/backtests)."""
+        """Historical bars between two datetimes (for downloads/backtests).
+
+        Pages backward in chunks with ``copy_rates_from`` so multi-year M1/M5/M15
+        pulls aren't silently truncated by the terminal's max-bars setting (a
+        single ``copy_rates_range`` call commonly caps out around the chart's
+        ``Max bars`` limit). Returns a de-duplicated, time-sorted frame.
+        """
         mt5 = self._require()
-        rates = mt5.copy_rates_range(
-            self.symbol, self._tf_const, pd.Timestamp(start).to_pydatetime(),
-            pd.Timestamp(end).to_pydatetime())
-        if rates is None:
-            raise RuntimeError(f"copy_rates_range failed: {mt5.last_error()}")
-        return self._rates_to_df(rates)
+        start_ts = pd.Timestamp(start)
+        end_ts = pd.Timestamp(end)
+        chunk = 50_000                 # bars per request; safely under MT5 limits
+        cursor = end_ts.to_pydatetime()
+        frames = []
+        while True:
+            rates = mt5.copy_rates_from(self.symbol, self._tf_const, cursor, chunk)
+            if rates is None or len(rates) == 0:
+                break
+            df = self._rates_to_df(rates)
+            frames.append(df)
+            earliest = df.index[0]
+            if earliest <= start_ts or len(df) < chunk:
+                break
+            # step the cursor one bar before the earliest we got, and continue
+            cursor = (earliest - pd.Timedelta(seconds=1)).to_pydatetime()
+        if not frames:
+            raise RuntimeError(f"copy_rates_from returned nothing: {mt5.last_error()}")
+        out = pd.concat(frames)
+        out = out[~out.index.duplicated()].sort_index()
+        return out.loc[(out.index >= start_ts) & (out.index <= end_ts)]
 
     def download(self, start, end, path: str) -> pd.DataFrame:
-        """Pull history and save it as a CSV usable by the backtester."""
+        """Pull history (paged) and save it as a CSV usable by the backtester."""
         df = self.copy_range(start, end)
         out = df.reset_index().rename(columns={"time": "Date"})
         out.to_csv(path, index=False)

@@ -136,6 +136,21 @@ def main(argv=None) -> int:
         sp.add_argument("--splits", type=int, default=3, help="walk-forward folds")
         sp.add_argument("--out", default=None, help="save full results table to csv")
 
+    val = sub.add_parser("validate",
+                         help="one-command honest verdict: backtest + Monte-Carlo "
+                              "+ walk-forward + buy&hold on a CSV")
+    grp = val.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--csv", help="OHLCV csv (your real history)")
+    grp.add_argument("--timeframe", help="use a bundled XAUUSD sample (e.g. MULTI, M15)")
+    val.add_argument("--tf", default="M15", help="config tuning preset (M5/M15/4H)")
+    val.add_argument("--equity", type=float, default=10_000.0)
+    val.add_argument("--splits", type=int, default=4, help="walk-forward folds")
+    val.add_argument("--montecarlo", type=int, default=2000)
+    val.add_argument("--objective", default="profit_factor")
+    val.add_argument("--dxy-csv", dest="dxy_csv", default=None,
+                     help="US Dollar Index csv -> enable the macro bias filter")
+    val.add_argument("--dxy-lookback", dest="dxy_lookback", type=int, default=20)
+
     args = parser.parse_args(argv)
 
     if args.command == "backtest":
@@ -245,6 +260,64 @@ def main(argv=None) -> int:
                           objective=args.objective, verbose=True)
         print(wf)
         print(json.dumps(wf.summary(), indent=2, default=str))
+        return 0
+
+    if args.command == "validate":
+        from .presets import xauusd_config, sample_data_path
+        from .research import walk_forward, compute_metrics
+        from .robustness import monte_carlo, buy_and_hold_return
+
+        base = xauusd_config(mode=Mode.BACKTEST, timeframe=args.tf,
+                             starting_equity=args.equity,
+                             with_management=True, management_style="runner")
+        path = args.csv or sample_data_path(args.timeframe)
+        ohlc = load_csv(path)
+        days = pd.Series(ohlc.index.date).nunique()
+        print(f"data: {len(ohlc)} candles over {days} distinct days "
+              f"({ohlc.index.min()} -> {ohlc.index.max()})")
+
+        macro = None
+        if args.dxy_csv:
+            from .macro import MacroBias
+            macro = MacroBias.from_dxy_csv(args.dxy_csv, lookback=args.dxy_lookback)
+            base.macro.enabled = True
+            print(f"macro filter: ON (DXY trend, lookback={args.dxy_lookback})")
+
+        # 1. single-pass backtest, net of costs
+        result = Backtester(base, macro_bias=macro).run(ohlc)
+        m = compute_metrics(result)
+        print("\n[backtest]  ", result)
+        print(f"  buy & hold over window: {buy_and_hold_return(ohlc):+.2%}")
+
+        # 2. Monte-Carlo
+        mc = monte_carlo(result, n_sims=args.montecarlo) if result.trades else {}
+        if mc:
+            print(f"[monte-carlo] prob_profit={mc.get('prob_profit')} "
+                  f"median_return={mc.get('return_p50')}")
+
+        # 3. walk-forward (the honest number)
+        grid = {"strategy.swing_length": [5, 6, 7],
+                "strategy.require_fvg": [True, False],
+                "strategy.default_rr": [4.0, 6.0]}
+        wf = walk_forward(base, ohlc, grid, n_splits=args.splits,
+                          objective=args.objective)
+        o = wf.oos_metrics
+        print("[walk-forward]", wf)
+
+        # 4. verdict
+        n = int(o.get("trades", 0))
+        pf = float(o.get("profit_factor", 0) or 0)
+        pp = float(mc.get("prob_profit", 0) or 0)
+        if n < 30:
+            verdict = (f"NOT VALIDATED — only {n} out-of-sample trades. Need ~100+ "
+                       "for a statistical read. Get denser/longer history and re-run.")
+        elif pf > 1.2 and pp >= 0.6:
+            verdict = (f"EDGE PRESENT ({o.get('significance')} significance, {n} OOS "
+                       f"trades, PF {pf}). Forward-test on demo before risking money.")
+        else:
+            verdict = (f"NO EDGE — {n} OOS trades, PF {pf}, prob_profit {pp}. "
+                       "Strategy/params do not beat costs out-of-sample here.")
+        print("\n=== VERDICT ===\n " + verdict)
         return 0
 
     return 1

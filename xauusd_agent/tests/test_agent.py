@@ -560,6 +560,34 @@ class TestMacroBias(unittest.TestCase):
         from xauusd_agent import AgentConfig
         self.assertFalse(AgentConfig().macro.enabled)
 
+    def test_from_dxy_csv_roundtrip(self):
+        import tempfile, os
+        from xauusd_agent import MacroBias
+        idx = pd.date_range("2024-01-01", periods=40, freq="4h")
+        up = pd.DataFrame({"Date": idx, "open": np.linspace(100, 110, 40),
+                           "high": np.linspace(100, 110, 40) + 0.2,
+                           "low": np.linspace(100, 110, 40) - 0.2,
+                           "close": np.linspace(100, 110, 40), "volume": 1.0})
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "dxy.csv")
+            up.to_csv(p, index=False)
+            mb = MacroBias.from_dxy_csv(p, lookback=5)
+        self.assertEqual(mb.bias_at(idx[-1]), -1)   # rising dollar -> gold bearish
+
+
+class TestValidateCommand(unittest.TestCase):
+    def test_validate_runs_and_gives_verdict(self):
+        import io, contextlib
+        from xauusd_agent.cli import main
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(["validate", "--timeframe", "4H", "--tf", "4H",
+                       "--splits", "2", "--montecarlo", "50"])
+        out = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("VERDICT", out)
+        self.assertIn("walk-forward", out)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

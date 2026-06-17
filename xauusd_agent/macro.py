@@ -52,6 +52,17 @@ class MacroBias:
         return cls(pd.Series(bias, index=close.index, dtype="int64"))
 
     @classmethod
+    def from_dxy_csv(cls, path: str, lookback: int = 20, deadband: float = 0.0,
+                     date_col: Optional[str] = None) -> "MacroBias":
+        """Load a US Dollar Index OHLC csv (MT5 / generic export) and derive the
+        gold bias from its trend. Same column handling as the gold loader, so a
+        DXY export sits next to your gold CSV and just works.
+        """
+        from .data import load_csv
+        return cls.from_dxy(load_csv(path, date_col=date_col),
+                            lookback=lookback, deadband=deadband)
+
+    @classmethod
     def from_series(cls, df: pd.DataFrame, col: str = "bias") -> "MacroBias":
         """Use an explicit bias series (values coerced to sign -1/0/+1)."""
         s = df[col] if isinstance(df, pd.DataFrame) else df
