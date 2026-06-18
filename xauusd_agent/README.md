@@ -325,6 +325,28 @@ print(wf)
 > results will say `none`/`weak`. Meaningful conclusions need months of intraday
 > data → hundreds of trades.
 
+### One command: real data → verdict
+
+`scripts/get_and_validate.sh` chains the two steps that turn a noise-sized demo
+into a real return number — `download` your history from MT5, then `validate`
+(backtest + Monte-Carlo + walk-forward + buy&hold) with the trend/regime mode on.
+Run it on the Windows box where MetaTrader 5 is installed:
+
+```bash
+# defaults: ~3yr of M15 XAUUSD, regime mode ON
+xauusd_agent/scripts/get_and_validate.sh
+
+# explicit range, also enable the USD macro filter
+xauusd_agent/scripts/get_and_validate.sh -b 2022-01-01 -e 2025-01-01 --dxy DX_M15.csv
+
+# A/B the trend mode by running it off
+xauusd_agent/scripts/get_and_validate.sh --no-regime
+```
+
+It skips the download if the CSV already exists, and prints the `=== VERDICT ===`
+line at the end. If that still says `NOT VALIDATED`, widen the date range (`-b`
+earlier) for more out-of-sample trades.
+
 ## Tests
 
 ```bash
