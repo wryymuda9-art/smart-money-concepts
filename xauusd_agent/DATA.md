@@ -8,6 +8,21 @@ no-account** data in a few minutes.
 > Why it matters: a verdict needs ~100+ out-of-sample trades. M15 over ~2–3 years
 > clears that bar; a few weeks does not.
 
+> **Note:** this must run on **your own machine** (or a VPS) — it needs internet
+> access to the data provider, which CI/cloud sandboxes block.
+
+---
+
+## Fastest path — one turnkey command
+
+```bash
+git clone <this repo> && cd smart-money-concepts
+./xauusd_agent/scripts/quickstart.sh
+```
+It installs deps, fetches ~3 years of free M15 gold from Dukascopy, and prints the
+`=== VERDICT ===`. Needs Python 3 and Node.js. Everything below is the manual
+breakdown of what it does.
+
 ---
 
 ## Option A — Dukascopy (recommended: free, no account, any OS)
