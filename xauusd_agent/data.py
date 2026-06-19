@@ -23,6 +23,27 @@ _COLUMN_ALIASES = {
 }
 
 
+def _to_datetime(s: pd.Series) -> pd.DatetimeIndex:
+    """Parse a time column to datetime, handling epoch ints (Dukascopy etc.).
+
+    A plain ``pd.to_datetime`` reads bare integers as *nanoseconds*, which mangles
+    epoch-seconds/millis exports. Detect the unit from magnitude instead.
+    """
+    num = pd.to_numeric(s, errors="coerce")
+    if num.notna().all():                       # purely numeric -> epoch timestamp
+        mx = float(num.abs().max())
+        if mx >= 1e17:
+            unit = "ns"
+        elif mx >= 1e14:
+            unit = "us"
+        elif mx >= 1e11:
+            unit = "ms"                          # Dukascopy / dukascopy-node default
+        else:
+            unit = "s"
+        return pd.DatetimeIndex(pd.to_datetime(num.to_numpy(), unit=unit))
+    return pd.DatetimeIndex(pd.to_datetime(s.to_numpy()))
+
+
 def normalise_ohlc(df: pd.DataFrame, date_col: Optional[str] = None) -> pd.DataFrame:
     """Return a clean OHLCV frame: datetime index, lowercase columns.
 
@@ -39,10 +60,10 @@ def normalise_ohlc(df: pd.DataFrame, date_col: Optional[str] = None) -> pd.DataF
                 date_col = cand
                 break
     if date_col is not None and date_col in df.columns:
-        df[date_col] = pd.to_datetime(df[date_col])
-        df = df.set_index(date_col)
+        df = df.set_index(_to_datetime(df[date_col]))
+        df = df.drop(columns=[date_col], errors="ignore")
     else:
-        df.index = pd.to_datetime(df.index)
+        df.index = _to_datetime(pd.Series(df.index))
 
     # Pick volume: prefer a non-zero 'volume', else fall back to tick volume.
     if "volume" not in df.columns or df.get("volume", pd.Series(dtype=float)).fillna(0).eq(0).all():
@@ -61,8 +82,48 @@ def normalise_ohlc(df: pd.DataFrame, date_col: Optional[str] = None) -> pd.DataF
 
 
 def load_csv(path: str, date_col: Optional[str] = None) -> pd.DataFrame:
-    """Load and normalise an OHLCV csv (MetaTrader / generic exports)."""
+    """Load and normalise an OHLCV csv (MetaTrader / Dukascopy / generic exports).
+
+    Epoch timestamps (e.g. Dukascopy's millisecond ``timestamp`` column) are
+    detected and parsed automatically, so a Dukascopy CSV loads with no fuss.
+    """
     return normalise_ohlc(pd.read_csv(path), date_col=date_col)
+
+
+# Free, no-account, any-OS gold history. ``dukascopy-node`` (Node CLI) writes a
+# ``timestamp,open,high,low,close,volume`` CSV that load_csv reads directly.
+DUKASCOPY_HINT = (
+    "Get free XAUUSD history from Dukascopy (no account, any OS):\n"
+    "  npx dukascopy-node -i xauusd -from 2022-01-01 -to 2025-01-01 \\\n"
+    "    -t m15 -f csv -v true -dir .\n"
+    "then:  python -m xauusd_agent validate --csv xauusd-*-m15-*.csv --regime"
+)
+
+
+def fetch_dukascopy(instrument: str, start: str, end: str, timeframe: str = "m15",
+                    out_dir: str = ".") -> str:
+    """Download free history via the ``dukascopy-node`` CLI; return the CSV path.
+
+    Requires Node.js (``npx`` on PATH). This is the easiest free, no-account,
+    cross-platform source for deep intraday gold data. On any failure it raises
+    with the manual command (``DUKASCOPY_HINT``) so you can run it by hand.
+    """
+    import glob
+    import subprocess
+
+    cmd = ["npx", "--yes", "dukascopy-node", "-i", instrument.lower(),
+           "-from", start, "-to", end, "-t", timeframe.lower(),
+           "-f", "csv", "-v", "true", "-dir", out_dir]
+    try:
+        subprocess.run(cmd, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(
+            f"dukascopy-node download failed ({exc}). Run it manually:\n{DUKASCOPY_HINT}"
+        ) from exc
+    matches = sorted(glob.glob(f"{out_dir}/{instrument.lower()}-*-{timeframe.lower()}-*.csv"))
+    if not matches:
+        raise RuntimeError(f"no CSV produced in {out_dir}; expected dukascopy-node output")
+    return matches[-1]
 
 
 def iter_windows(

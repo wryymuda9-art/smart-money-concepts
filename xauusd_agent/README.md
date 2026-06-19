@@ -60,6 +60,28 @@ The agent runs as a normal Python process on your machine/VPS; **MT5 is the data
 and `Mt5Broker` are lazy-imported, so the package stays runnable on Linux/macOS and
 only activates on a Windows host with an MT5 terminal.
 
+### Free data sources
+
+You need real intraday history (months → years) before any result means anything.
+Free options, best fit first:
+
+| Source | Cost | History depth | Live? | OS |
+|--------|------|---------------|-------|----|
+| **MT5 demo account** (IC Markets, Pepperstone, FxPro, RoboForex, XM…) | free | years, M1→MN | **yes** | Windows |
+| **Dukascopy** via `npx dukascopy-node` | free, no account | years, tick/M1+ | no | any |
+| HistData.com | free, no account | years, M1 | no | any |
+| Yahoo (`GC=F`) via `yfinance` | free | intraday only ~60d | no | any |
+| Twelve Data / Finnhub free tier | free key | shallow, rate-limited | delayed | any |
+
+`load_csv` auto-detects epoch timestamps, so a **Dukascopy** CSV loads with no
+conversion — the easiest free, any-OS, deep-intraday source:
+
+```bash
+npx dukascopy-node -i xauusd -from 2022-01-01 -to 2025-01-01 -t m15 -f csv -v true -dir .
+python -m xauusd_agent validate --csv xauusd-*-m15-*.csv --regime
+# …or let the helper do both:  scripts/get_and_validate.sh --source dukascopy
+```
+
 ## The strategy (ICT day-trade / scalp)
 
 `SMCStrategy` is *causal* — it only ever sees candles up to the just-closed one, so

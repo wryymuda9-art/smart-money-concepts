@@ -10,8 +10,13 @@
 # bars for ~100+ out-of-sample trades, which is what the verdict needs to mean
 # anything.
 #
+# Data sources (--source):
+#   mt5        (default) MetaTrader 5 terminal — live + deep history, Windows only.
+#   dukascopy  free, no account, any OS — needs Node.js (npx dukascopy-node).
+#
 # Usage:
-#   ./get_and_validate.sh                         # defaults below
+#   ./get_and_validate.sh                         # defaults below (mt5)
+#   ./get_and_validate.sh --source dukascopy      # free, any OS, no account
 #   ./get_and_validate.sh -s XAUUSD -t M15 -b 2022-01-01 -e 2025-01-01
 #   ./get_and_validate.sh --dxy DX_M15.csv        # also enable the USD macro filter
 #   ./get_and_validate.sh --no-regime             # A/B: run without trend mode
@@ -25,6 +30,7 @@ TF="M15"
 START="2022-01-01"
 END="$(date +%F)"          # today
 OUT=""                      # derived from symbol/tf if empty
+SOURCE="mt5"                # mt5 (live+history, Windows) | dukascopy (free, any-OS)
 REGIME="--regime"           # trend mode on by default (the whole point)
 DXY=""                      # optional US Dollar Index csv -> macro filter
 SPLITS="6"                  # more folds: longer history supports more OOS windows
@@ -39,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     -b|--start)     START="$2"; shift 2 ;;
     -e|--end)       END="$2"; shift 2 ;;
     -o|--out)       OUT="$2"; shift 2 ;;
+    --source)       SOURCE="$2"; shift 2 ;;
     --dxy)          DXY="$2"; shift 2 ;;
     --splits)       SPLITS="$2"; shift 2 ;;
     --montecarlo)   MONTECARLO="$2"; shift 2 ;;
@@ -60,9 +67,19 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$REPO_ROOT"
 PY="${PYTHON:-python}"
 
-echo "==> 1/2  download  $SYMBOL $TF  $START -> $END  ->  $OUT"
+echo "==> 1/2  download  $SYMBOL $TF  $START -> $END  (source=$SOURCE)  ->  $OUT"
 if [[ -f "$OUT" ]]; then
   echo "    $OUT already exists — skipping download (delete it to refetch)."
+elif [[ "$SOURCE" == "dukascopy" ]]; then
+  # Free, no-account, any-OS gold history via the dukascopy-node CLI (needs Node).
+  "$PY" - "$SYMBOL" "$START" "$END" "$TF" "$OUT" <<'PYEOF'
+import sys, shutil
+from xauusd_agent.data import fetch_dukascopy
+sym, start, end, tf, out = sys.argv[1:6]
+path = fetch_dukascopy(sym, start, end, timeframe=tf)
+shutil.copyfile(path, out)
+print(f"dukascopy -> {out}")
+PYEOF
 else
   dl_args=(download --symbol "$SYMBOL" --timeframe "$TF"
            --start "$START" --end "$END" --out "$OUT")

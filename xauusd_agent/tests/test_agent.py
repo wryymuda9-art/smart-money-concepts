@@ -614,6 +614,33 @@ class TestRegimeMode(unittest.TestCase):
         self.assertLessEqual(n_on, n_off)
 
 
+class TestDukascopyData(unittest.TestCase):
+    def test_epoch_millis_timestamp_parsed(self):
+        # Dukascopy / dukascopy-node CSV: epoch-millis 'timestamp' column.
+        from xauusd_agent.data import normalise_ohlc
+        ts = [1_640_995_200_000, 1_640_995_200_000 + 900_000]  # 2022-01-01 00:00 + 15m, ms
+        df = pd.DataFrame({"timestamp": ts, "open": [1, 2], "high": [3, 4],
+                           "low": [0.5, 1.5], "close": [2, 3], "volume": [10, 20]})
+        out = normalise_ohlc(df)
+        self.assertEqual(str(out.index[0]), "2022-01-01 00:00:00")
+        self.assertEqual((out.index[1] - out.index[0]).seconds, 900)  # 15-minute bars
+        self.assertEqual(list(out.columns), ["open", "high", "low", "close", "volume"])
+
+    def test_epoch_seconds_timestamp_parsed(self):
+        from xauusd_agent.data import normalise_ohlc
+        df = pd.DataFrame({"time": [1_640_995_200], "open": [1.0], "high": [2.0],
+                           "low": [0.5], "close": [1.5], "volume": [1.0]})
+        out = normalise_ohlc(df)
+        self.assertEqual(str(out.index[0]), "2022-01-01 00:00:00")
+
+    def test_iso_string_still_works(self):
+        from xauusd_agent.data import normalise_ohlc
+        df = pd.DataFrame({"date": ["2024-03-01 09:00", "2024-03-01 09:15"],
+                           "open": [1, 2], "high": [3, 4], "low": [0, 1], "close": [2, 3]})
+        out = normalise_ohlc(df)
+        self.assertEqual(str(out.index[0]), "2024-03-01 09:00:00")
+
+
 class TestValidateCommand(unittest.TestCase):
     def test_validate_runs_and_gives_verdict(self):
         import io, contextlib
