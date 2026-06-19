@@ -82,6 +82,14 @@ python -m xauusd_agent validate --csv xauusd-*-m15-*.csv --regime
 # …or let the helper do both:  scripts/get_and_validate.sh --source dukascopy
 ```
 
+**HistData.com** ships headerless `;`-delimited M1 zips ("Generic ASCII"); use the
+dedicated loader (volume is 0 in those files, so order-block strength is weaker):
+
+```python
+from xauusd_agent.data import load_histdata
+ohlc = load_histdata("DAT_ASCII_XAUUSD_M1_2024.csv")
+```
+
 ## The strategy (ICT day-trade / scalp)
 
 `SMCStrategy` is *causal* — it only ever sees candles up to the just-closed one, so

@@ -126,6 +126,31 @@ def fetch_dukascopy(instrument: str, start: str, end: str, timeframe: str = "m15
     return matches[-1]
 
 
+# HistData.com "Generic ASCII" M1 bars: free, no account, but manual download
+# (their site has no clean API). Format is headerless, semicolon-delimited:
+#   YYYYMMDD HHMMSS;open;high;low;close;volume   (volume is always 0 for FX/metals)
+HISTDATA_HINT = (
+    "Download free M1 history from histdata.com -> 'Generic ASCII' (one zip per\n"
+    "month), unzip the DAT_ASCII_*.csv, then:\n"
+    "  python -m xauusd_agent validate --csv DAT_ASCII_XAUUSD_M1_2024.csv --regime"
+)
+
+
+def load_histdata(path: str) -> pd.DataFrame:
+    """Load a HistData.com 'Generic ASCII' M1 bar CSV into the standard frame.
+
+    Headerless, semicolon-delimited, timestamp ``YYYYMMDD HHMMSS``. Volume is 0 in
+    these exports, so order-block strength (volume-based) is weaker — fine for a
+    free deep-history backtest, but prefer MT5/Dukascopy tick volume if you have it.
+    """
+    df = pd.read_csv(
+        path, sep=";", header=None,
+        names=["datetime", "open", "high", "low", "close", "volume"],
+    )
+    df["datetime"] = pd.to_datetime(df["datetime"], format="%Y%m%d %H%M%S")
+    return normalise_ohlc(df, date_col="datetime")
+
+
 def iter_windows(
     ohlc: pd.DataFrame, window: int, warmup: int
 ) -> Iterator[Tuple[int, pd.DataFrame]]:

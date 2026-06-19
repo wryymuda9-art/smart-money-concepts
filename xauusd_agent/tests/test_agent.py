@@ -640,6 +640,23 @@ class TestDukascopyData(unittest.TestCase):
         out = normalise_ohlc(df)
         self.assertEqual(str(out.index[0]), "2024-03-01 09:00:00")
 
+    def test_histdata_m1_ascii(self):
+        # HistData.com 'Generic ASCII' M1: headerless, ';'-delimited, YYYYMMDD HHMMSS.
+        import tempfile, os
+        from xauusd_agent.data import load_histdata
+        text = ("20240301 090000;2050.1;2050.6;2049.8;2050.4;0\n"
+                "20240301 090100;2050.4;2051.0;2050.2;2050.9;0\n")
+        fd, p = tempfile.mkstemp(suffix=".csv")
+        os.write(fd, text.encode()); os.close(fd)
+        try:
+            out = load_histdata(p)
+            self.assertEqual(list(out.columns), ["open", "high", "low", "close", "volume"])
+            self.assertEqual(str(out.index[0]), "2024-03-01 09:00:00")
+            self.assertEqual((out.index[1] - out.index[0]).seconds, 60)  # M1 bars
+            self.assertAlmostEqual(float(out["close"].iloc[-1]), 2050.9)
+        finally:
+            os.remove(p)
+
 
 class TestValidateCommand(unittest.TestCase):
     def test_validate_runs_and_gives_verdict(self):
