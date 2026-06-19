@@ -63,7 +63,7 @@ only activates on a Windows host with an MT5 terminal.
 ### Free data sources
 
 You need real intraday history (months → years) before any result means anything.
-Free options, best fit first:
+**See [DATA.md](DATA.md) for a step-by-step quickstart.** Free options, best fit first:
 
 | Source | Cost | History depth | Live? | OS |
 |--------|------|---------------|-------|----|
