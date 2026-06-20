@@ -375,6 +375,26 @@ Here the session filter is the dominant throttle; dropping `require_session` or
 `require_fvg` is the highest-leverage way to raise trade count. `ENTERED` always
 equals the number of trades opened.
 
+### Choosing trading sessions
+
+By default the agent only trades the **London open** and **New York** kill zones —
+gold's highest-liquidity windows. Add the Asian session (or go 24/5) with one flag:
+
+| `--sessions` | Trades during | UTC windows |
+|--------------|---------------|-------------|
+| `killzones` *(default)* | London open + New York | 06–09, 11–14 |
+| `asia-london-ny` | **Asian** + London + NY | 00–04, 06–09, 11–14 |
+| `majors` | full London + New York | 07–16, 13–22 |
+| `all` | 24/5 (no time filter) | — |
+
+```bash
+python -m xauusd_agent backtest --csv data.csv --sessions asia-london-ny --diagnose
+python -m xauusd_agent validate --csv data.csv --sessions all --regime
+```
+Pair with `--diagnose` to see how each window changes trade count and quality. Note:
+session windows are evaluated in `strategy.time_zone` (default UTC) — if your CSV is
+in broker time, set that or the kill zones land at the wrong hour.
+
 ### One command: real data → verdict
 
 `scripts/get_and_validate.sh` chains the two steps that turn a noise-sized demo

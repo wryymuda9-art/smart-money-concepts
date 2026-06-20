@@ -24,6 +24,30 @@ from .data import load_csv
 from .backtest import Backtester
 
 
+# Named trading-window presets for the --sessions flag. "all" trades 24/5 (no
+# session filter); the rest restrict entries to the listed kill zones / sessions.
+SESSION_PRESETS = {
+    "killzones": ["London open kill zone", "New York kill zone"],
+    "asia-london-ny": ["Asian kill zone", "London open kill zone", "New York kill zone"],
+    "majors": ["London", "New York"],
+    "all": None,   # disable the session filter entirely
+}
+
+
+def _apply_sessions(cfg, sessions) -> None:
+    """Apply a --sessions preset to the strategy config (in place)."""
+    if not sessions:
+        return
+    if sessions not in SESSION_PRESETS:
+        raise SystemExit(f"--sessions must be one of {sorted(SESSION_PRESETS)}")
+    chosen = SESSION_PRESETS[sessions]
+    if chosen is None:
+        cfg.strategy.require_session = False
+    else:
+        cfg.strategy.require_session = True
+        cfg.strategy.sessions = list(chosen)
+
+
 def _build_config(args) -> AgentConfig:
     # a --config file (yaml/json) is the base; only explicitly-passed flags override it
     if getattr(args, "config", None):
@@ -46,6 +70,7 @@ def _build_config(args) -> AgentConfig:
     cfg.strategy.window = ov(getattr(args, "window", None), cfg.strategy.window)
     cfg.strategy.require_fvg = ov(getattr(args, "require_fvg", None), cfg.strategy.require_fvg)
     cfg.strategy.require_session = ov(getattr(args, "require_session", None), cfg.strategy.require_session)
+    _apply_sessions(cfg, getattr(args, "sessions", None))
     return cfg
 
 
@@ -68,6 +93,8 @@ def main(argv=None) -> int:
     bt.add_argument("--no-require-fvg", dest="require_fvg", action="store_const", const=False)
     bt.add_argument("--require-session", dest="require_session", action="store_const", const=True, default=None)
     bt.add_argument("--no-require-session", dest="require_session", action="store_const", const=False)
+    bt.add_argument("--sessions", choices=sorted(SESSION_PRESETS), default=None,
+                    help="trading window: killzones (default) | asia-london-ny | majors | all")
     bt.add_argument("--progress-every", type=int, default=0)
     bt.add_argument("--diagnose", action="store_true",
                     help="print the signal funnel (which gate rejects each candle)")
@@ -154,6 +181,8 @@ def main(argv=None) -> int:
     val.add_argument("--dxy-lookback", dest="dxy_lookback", type=int, default=20)
     val.add_argument("--regime", action="store_true",
                      help="enable trend/range regime mode (trade with trends, let winners run)")
+    val.add_argument("--sessions", choices=sorted(SESSION_PRESETS), default=None,
+                     help="trading window: killzones (default) | asia-london-ny | majors | all")
 
     args = parser.parse_args(argv)
 
@@ -279,6 +308,9 @@ def main(argv=None) -> int:
         if args.regime:
             base.strategy.regime_enabled = True
             print("regime mode: ON (trade with trends, widen target)")
+        _apply_sessions(base, args.sessions)
+        if args.sessions:
+            print(f"sessions: {args.sessions}")
         path = args.csv or sample_data_path(args.timeframe)
         ohlc = load_csv(path)
         days = pd.Series(ohlc.index.date).nunique()

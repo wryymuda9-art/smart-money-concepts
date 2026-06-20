@@ -677,6 +677,29 @@ class TestSignalFunnel(unittest.TestCase):
                             for k in res.diagnostics))
 
 
+class TestSessionPresets(unittest.TestCase):
+    def test_presets_set_strategy_sessions(self):
+        from xauusd_agent.cli import _apply_sessions, SESSION_PRESETS
+        from xauusd_agent.config import AgentConfig
+
+        cfg = AgentConfig()
+        _apply_sessions(cfg, "asia-london-ny")
+        self.assertTrue(cfg.strategy.require_session)
+        self.assertIn("Asian kill zone", cfg.strategy.sessions)
+        self.assertIn("New York kill zone", cfg.strategy.sessions)
+
+        _apply_sessions(cfg, "all")
+        self.assertFalse(cfg.strategy.require_session)   # 24/5, no filter
+
+        self.assertIn("killzones", SESSION_PRESETS)
+
+    def test_unknown_preset_rejected(self):
+        from xauusd_agent.cli import _apply_sessions
+        from xauusd_agent.config import AgentConfig
+        with self.assertRaises(SystemExit):
+            _apply_sessions(AgentConfig(), "tokyo-only")
+
+
 class TestValidateCommand(unittest.TestCase):
     def test_validate_runs_and_gives_verdict(self):
         import io, contextlib
