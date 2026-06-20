@@ -658,6 +658,25 @@ class TestDukascopyData(unittest.TestCase):
             os.remove(p)
 
 
+class TestSignalFunnel(unittest.TestCase):
+    def test_funnel_accounts_for_every_candle(self):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.backtest import Backtester
+        ohlc = load_csv(sample_data_path("4H")).head(600)
+        cfg = xauusd_config(timeframe="4H")
+        cfg.strategy.window = 150
+        res = Backtester(cfg).run(ohlc)
+        self.assertTrue(res.diagnostics, "diagnostics should be populated")
+        # ENTERED count must equal the number of trades actually opened.
+        self.assertEqual(res.diagnostics.get("ENTERED", 0), res.n_trades)
+        # Funnel renders and names a known rejection gate.
+        text = res.signal_funnel()
+        self.assertIn("%", text)
+        self.assertTrue(any("order block" in k or "bias" in k or "session" in k
+                            for k in res.diagnostics))
+
+
 class TestValidateCommand(unittest.TestCase):
     def test_validate_runs_and_gives_verdict(self):
         import io, contextlib

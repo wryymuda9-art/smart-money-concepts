@@ -69,6 +69,8 @@ def main(argv=None) -> int:
     bt.add_argument("--require-session", dest="require_session", action="store_const", const=True, default=None)
     bt.add_argument("--no-require-session", dest="require_session", action="store_const", const=False)
     bt.add_argument("--progress-every", type=int, default=0)
+    bt.add_argument("--diagnose", action="store_true",
+                    help="print the signal funnel (which gate rejects each candle)")
     bt.add_argument("--report-html", default=None, help="write a performance tearsheet (HTML)")
     bt.add_argument("--report-png", default=None, help="write a performance tearsheet (PNG)")
     bt.add_argument("--montecarlo", type=int, default=0, help="bootstrap N sims to estimate the outcome distribution")
@@ -163,6 +165,8 @@ def main(argv=None) -> int:
         print(json.dumps(result.summary(), indent=2))
         from .robustness import buy_and_hold_return
         print(f"buy & hold over window: {buy_and_hold_return(ohlc):+.2%}")
+        if args.diagnose:
+            print(result.signal_funnel())
         if args.montecarlo:
             from .robustness import monte_carlo
             mc = monte_carlo(result, n_sims=args.montecarlo)

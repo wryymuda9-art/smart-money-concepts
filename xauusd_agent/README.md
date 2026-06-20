@@ -355,6 +355,26 @@ print(wf)
 > results will say `none`/`weak`. Meaningful conclusions need months of intraday
 > data → hundreds of trades.
 
+### Why so few trades? — the signal funnel
+
+When a backtest produces too few trades to validate, `--diagnose` shows *which gate*
+is throttling frequency, so you loosen the right one instead of guessing:
+
+```bash
+python -m xauusd_agent backtest --csv data.csv --diagnose
+```
+```
+signal funnel (share of all decision candles):
+  outside session              1,120   66.6%   <- kill-zone filter rejects most bars
+  price not in order block       409   24.3%
+  no FVG confluence              132    7.9%
+  no active order block            9    0.5%
+  ENTERED                          8    0.5%
+```
+Here the session filter is the dominant throttle; dropping `require_session` or
+`require_fvg` is the highest-leverage way to raise trade count. `ENTERED` always
+equals the number of trades opened.
+
 ### One command: real data → verdict
 
 `scripts/get_and_validate.sh` chains the two steps that turn a noise-sized demo

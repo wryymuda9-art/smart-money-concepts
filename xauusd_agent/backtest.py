@@ -14,8 +14,9 @@ before deciding, and a position can never be entered and exited on the same bar.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -32,6 +33,9 @@ class BacktestResult:
     config: AgentConfig
     equity_curve: pd.Series
     trades: List[ClosedTrade] = field(default_factory=list)
+    # Per-candle decision tally: why each bar did/didn't become a trade. Lets you
+    # see *which gate* throttles trade frequency (the usual "too few trades" cause).
+    diagnostics: Dict[str, int] = field(default_factory=dict)
 
     # -- summary metrics --------------------------------------------------------
 
@@ -97,6 +101,23 @@ class BacktestResult:
             f"maxDD {s['max_drawdown']:.2%} | eq ${s['final_equity']:,.0f}"
         )
 
+    def signal_funnel(self) -> str:
+        """Human-readable breakdown of why candles did/didn't become trades.
+
+        Each line is a rejection reason (or 'ENTERED') with its share of all
+        decision candles — so you can see which gate throttles trade frequency.
+        """
+        d = self.diagnostics
+        if not d:
+            return "no diagnostics collected"
+        total = sum(d.values()) or 1
+        rows = sorted(d.items(), key=lambda kv: kv[1], reverse=True)
+        width = max(len(k) for k in d)
+        lines = ["signal funnel (share of all decision candles):"]
+        for reason, n in rows:
+            lines.append(f"  {reason:<{width}}  {n:>7,}  {n / total:6.1%}")
+        return "\n".join(lines)
+
 
 class Backtester:
     def __init__(self, config: AgentConfig, news_filter=None, macro_bias=None):
@@ -122,6 +143,7 @@ class Backtester:
 
         eq_times: List = []
         eq_values: List[float] = []
+        funnel: Counter = Counter()
 
         for count, (i, window) in enumerate(
             iter_windows(ohlc, cfg.strategy.window, warmup)
@@ -152,12 +174,25 @@ class Backtester:
                                  when, 1 if signal.side is Side.LONG else -1))
 
             # 3. gate + size + open
-            if signal.is_trade and not blackout and not against_macro:
+            if not signal.is_trade:
+                funnel[signal.reason] += 1            # rejected inside the strategy
+            elif blackout:
+                funnel["blocked: news blackout"] += 1
+            elif against_macro:
+                funnel["blocked: macro filter"] += 1
+            else:
                 today = pd.Timestamp(when).date()
-                ok, _why = self.risk.can_trade(today, equity, self.broker.open_count)
-                if ok and self.risk.spread_ok(cfg.instrument.sim_spread):
+                ok, why = self.risk.can_trade(today, equity, self.broker.open_count)
+                if not ok:
+                    funnel[f"blocked: {why}"] += 1
+                elif not self.risk.spread_ok(cfg.instrument.sim_spread):
+                    funnel["blocked: spread too wide"] += 1
+                else:
                     sizing = self.risk.size(signal, equity)
-                    if sizing.approved:
+                    if not sizing.approved:
+                        funnel["blocked: position sizing"] += 1
+                    else:
+                        funnel["ENTERED"] += 1
                         self.broker.place(
                             Order(
                                 side=signal.side,
@@ -183,4 +218,5 @@ class Backtester:
 
         equity_curve = pd.Series(eq_values, index=pd.Index(eq_times, name="time"),
                                  name="equity")
-        return BacktestResult(cfg, equity_curve, list(self.broker.closed))
+        return BacktestResult(cfg, equity_curve, list(self.broker.closed),
+                              diagnostics=dict(funnel))
