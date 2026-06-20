@@ -375,6 +375,25 @@ Here the session filter is the dominant throttle; dropping `require_session` or
 `require_fvg` is the highest-leverage way to raise trade count. `ENTERED` always
 equals the number of trades opened.
 
+**Too strict? — the near-miss check.** `--near-miss` answers a different question:
+how many *genuinely good* setups (mandatory structure + unmitigated order block +
+price tapping it) were rejected **only** by an optional filter:
+
+```bash
+python -m xauusd_agent backtest --csv data.csv --near-miss
+```
+```
+near-miss analysis (good core setups vs the optional filters):
+  core setups found                379
+  -> would trade now                11     3%
+  -> vetoed by SESSION only         29     8%
+  -> vetoed by FVG only            132    35%
+  -> vetoed by SESSION + FVG       207    55%
+```
+On the bundled sample the session + FVG filters veto **97% of valid setups** —
+strong evidence the defaults are over-filtered for sparse data. The FVG
+requirement is the single biggest culprit (involved in ~90% of vetoes).
+
 ### Choosing trading sessions
 
 By default the agent only trades the **London open** and **New York** kill zones —

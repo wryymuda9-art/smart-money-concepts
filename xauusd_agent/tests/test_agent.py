@@ -677,6 +677,23 @@ class TestSignalFunnel(unittest.TestCase):
                             for k in res.diagnostics))
 
 
+class TestNearMiss(unittest.TestCase):
+    def test_near_miss_accounts_for_core_setups(self):
+        from xauusd_agent.presets import xauusd_config, sample_data_path
+        from xauusd_agent.data import load_csv
+        from xauusd_agent.research import near_miss_report, format_near_miss
+        ohlc = load_csv(sample_data_path("4H")).head(700)
+        cfg = xauusd_config(timeframe="4H")
+        cfg.strategy.window = 150
+        t = near_miss_report(cfg, ohlc)
+        # the four outcome buckets must sum to the core-setup count
+        parts = (t["tradeable_now"] + t["vetoed_by_session_only"]
+                 + t["vetoed_by_fvg_only"] + t["vetoed_by_session_and_fvg"])
+        self.assertEqual(parts, t["core_setups"])
+        self.assertLessEqual(t["core_setups"], t["decision_candles"])
+        self.assertIn("near-miss", format_near_miss(t))
+
+
 class TestSessionPresets(unittest.TestCase):
     def test_presets_set_strategy_sessions(self):
         from xauusd_agent.cli import _apply_sessions, SESSION_PRESETS

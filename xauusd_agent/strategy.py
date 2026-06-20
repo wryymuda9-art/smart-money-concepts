@@ -223,6 +223,50 @@ class SMCStrategy:
 
     # -- main entry point -------------------------------------------------------
 
+    def assess(self, window: pd.DataFrame) -> dict:
+        """Evaluate the gates *independently* to expose near-misses.
+
+        Unlike :meth:`evaluate` (which short-circuits at the first failing gate),
+        this computes each gate regardless of the others, so we can tell when a
+        genuinely good core setup (structure + unmitigated OB + price tapping it)
+        was vetoed *only* by an optional filter such as session or FVG. Answers
+        "is the algorithm too strict — rejecting good setups?" with evidence.
+        """
+        cfg = self.cfg
+        out = {"core_setup": False, "in_session": False, "has_fvg": False,
+               "has_bias": False, "has_ob": False, "tapping": False}
+        if len(window) < max(3 * cfg.swing_length, 30):
+            return out
+
+        last = len(window) - 1
+        high = float(window["high"].iloc[-1])
+        low = float(window["low"].iloc[-1])
+
+        out["in_session"] = self._session_active(window)
+
+        shl = smc.swing_highs_lows(window, swing_length=cfg.swing_length)
+        bias = self._current_bias(smc.bos_choch(window, shl), last)
+        if bias is Side.NONE:
+            return out
+        out["has_bias"] = True
+        direction = 1 if bias is Side.LONG else -1
+
+        ob = smc.ob(window, shl)
+        ob_idx = self._active_order_block(ob, direction, last)
+        if ob_idx is None:
+            return out
+        ob_top = float(ob["Top"].iloc[ob_idx])
+        ob_bottom = float(ob["Bottom"].iloc[ob_idx])
+        if cfg.min_ob_strength and float(ob["Percentage"].iloc[ob_idx]) < cfg.min_ob_strength:
+            return out
+        out["has_ob"] = True
+
+        out["tapping"] = (low <= ob_top) and (high >= ob_bottom)
+        out["has_fvg"] = self._fvg_overlaps(smc.fvg(window), direction, ob_top, ob_bottom, last)
+        # A "core setup" is the mandatory SMC structure, ignoring the optional overlays.
+        out["core_setup"] = out["has_bias"] and out["has_ob"] and out["tapping"]
+        return out
+
     def evaluate(self, window: pd.DataFrame) -> Signal:
         cfg = self.cfg
         if len(window) < max(3 * cfg.swing_length, 30):

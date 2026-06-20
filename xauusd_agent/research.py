@@ -27,6 +27,69 @@ import pandas as pd
 
 from .config import AgentConfig
 from .backtest import Backtester, BacktestResult
+from .data import iter_windows
+from .strategy import SMCStrategy
+
+
+# -- near-miss analysis ---------------------------------------------------------
+
+def near_miss_report(cfg: AgentConfig, ohlc: pd.DataFrame) -> Dict[str, int]:
+    """Count how often a good core setup was vetoed *only* by an optional filter.
+
+    A "core setup" = mandatory SMC structure (bias + unmitigated order block +
+    price tapping it). For every decision candle we record whether that core setup
+    existed and, if so, which optional filter (session window / FVG requirement)
+    would have blocked it. This answers "are the parameters too strict — rejecting
+    good setups?" with numbers instead of opinion.
+    """
+    strat = SMCStrategy(cfg.strategy, cfg.instrument)
+    warmup = max(cfg.strategy.window, 3 * cfg.strategy.swing_length + 5)
+    warmup = min(warmup, max(0, len(ohlc) - 1))
+
+    tally = {
+        "decision_candles": 0,
+        "core_setups": 0,              # mandatory structure satisfied
+        "tradeable_now": 0,            # core setup AND passes session + FVG (would fire)
+        "vetoed_by_session_only": 0,   # good setup killed purely by the clock
+        "vetoed_by_fvg_only": 0,       # good setup killed purely by missing FVG
+        "vetoed_by_session_and_fvg": 0,
+    }
+    need_fvg = cfg.strategy.require_fvg
+    need_session = cfg.strategy.require_session
+
+    for _i, window in iter_windows(ohlc, cfg.strategy.window, warmup):
+        tally["decision_candles"] += 1
+        a = strat.assess(window)
+        if not a["core_setup"]:
+            continue
+        tally["core_setups"] += 1
+        session_ok = a["in_session"] or not need_session
+        fvg_ok = a["has_fvg"] or not need_fvg
+        if session_ok and fvg_ok:
+            tally["tradeable_now"] += 1
+        elif not session_ok and fvg_ok:
+            tally["vetoed_by_session_only"] += 1
+        elif session_ok and not fvg_ok:
+            tally["vetoed_by_fvg_only"] += 1
+        else:
+            tally["vetoed_by_session_and_fvg"] += 1
+    return tally
+
+
+def format_near_miss(tally: Dict[str, int]) -> str:
+    core = tally.get("core_setups", 0) or 1
+    lines = ["near-miss analysis (good core setups vs the optional filters):",
+             f"  decision candles            {tally['decision_candles']:>8,}",
+             f"  core setups found           {tally['core_setups']:>8,}",
+             f"  -> would trade now          {tally['tradeable_now']:>8,}  "
+             f"{tally['tradeable_now'] / core:5.0%}",
+             f"  -> vetoed by SESSION only   {tally['vetoed_by_session_only']:>8,}  "
+             f"{tally['vetoed_by_session_only'] / core:5.0%}",
+             f"  -> vetoed by FVG only       {tally['vetoed_by_fvg_only']:>8,}  "
+             f"{tally['vetoed_by_fvg_only'] / core:5.0%}",
+             f"  -> vetoed by SESSION + FVG  {tally['vetoed_by_session_and_fvg']:>8,}  "
+             f"{tally['vetoed_by_session_and_fvg'] / core:5.0%}"]
+    return "\n".join(lines)
 
 
 # -- metrics --------------------------------------------------------------------

@@ -98,6 +98,8 @@ def main(argv=None) -> int:
     bt.add_argument("--progress-every", type=int, default=0)
     bt.add_argument("--diagnose", action="store_true",
                     help="print the signal funnel (which gate rejects each candle)")
+    bt.add_argument("--near-miss", dest="near_miss", action="store_true",
+                    help="count good setups vetoed only by an optional filter (too-strict check)")
     bt.add_argument("--report-html", default=None, help="write a performance tearsheet (HTML)")
     bt.add_argument("--report-png", default=None, help="write a performance tearsheet (PNG)")
     bt.add_argument("--montecarlo", type=int, default=0, help="bootstrap N sims to estimate the outcome distribution")
@@ -196,6 +198,9 @@ def main(argv=None) -> int:
         print(f"buy & hold over window: {buy_and_hold_return(ohlc):+.2%}")
         if args.diagnose:
             print(result.signal_funnel())
+        if args.near_miss:
+            from .research import near_miss_report, format_near_miss
+            print(format_near_miss(near_miss_report(cfg, ohlc)))
         if args.montecarlo:
             from .robustness import monte_carlo
             mc = monte_carlo(result, n_sims=args.montecarlo)
