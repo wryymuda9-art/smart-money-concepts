@@ -56,19 +56,49 @@ block + price tapping it); only **3%** survived the optional filters. So the fil
 
 **Verdict:** every entry filter made it worse.
 
+### 4. Gross edge — are costs masking a real edge? (best config, costs zeroed)
+
+| Config | Trades | Win% | PF | Return | Sharpe |
+|---|---|---|---|---|---|
+| Best (strict + trailing), real costs | 141 | 59% | 0.97 | −0.9% | −0.06 |
+| Best, **zero costs** | 141 | 61% | **1.08** | **+2.1%** | **+0.17** |
+
+**Verdict:** there *is* a real but thin gross edge — trading costs (~$0.40/trade
+spread+slippage) eat it entirely. This makes the fix mechanical: bigger winners
+per trade so the edge clears the fixed cost.
+
+### 5. Walk-forward — does a bigger reward:risk target rescue it? (costs ON)
+
+Optimised fixed reward:risk on the first half, validated on the untouched second half.
+
+| Variant | In-sample PF (2012–17) | Out-of-sample PF (2017–22) |
+|---|---|---|
+| Baseline (nearest-liquidity) | 1.20 | 0.81 |
+| Fixed RR 3:1 | 1.45 | 0.90 |
+| Fixed RR 4:1 | 1.46 | 0.92 |
+| Fixed RR 5:1 | 1.48 | 0.92 |
+
+**Verdict:** a fixed RR target is a genuine, *consistent* improvement (better PF in
+BOTH halves — it generalises, not curve-fit). But it is not enough: the best
+out-of-sample PF is 0.92, still below 1.0. The strategy was profitable in 2012–2017
+(PF up to 1.48) and decayed to a loss in 2017–2022 — the edge faded over time,
+most likely arbitraged away as these SMC patterns became widely traded.
+
 ## Conclusion
 
-**This SMC strategy does not have a profitable edge on hourly gold.** Across every
-lever (entry filters, sessions, trade management, entry quality), the best
-configuration achieved was **−0.9% over 10 years** — and that is an *in-sample*
-figure, the most favourable possible measurement. Over the same decade, simply
-holding gold returned **+27%**. No walk-forward test is needed to "confirm" a
-result that is already negative in-sample; out-of-sample would only be worse.
+There was a **real but thin edge** on hourly gold that has **decayed**: profitable
+in 2012–2017, losing in 2017–2022. We diagnosed the weakness correctly (winners too
+small relative to fixed costs) and found the right lever (larger reward:risk
+targets), which improves results *consistently in and out of sample*. It is still
+not sufficient — the best out-of-sample profit factor is 0.92, below the 1.0
+break-even line. **The strategy cannot be tuned back into profitability on recent
+gold.** Net of costs, on the most recent (most decision-relevant) data, it loses.
 
-The original concern (too strict) was reasonable and was tested rigorously: the
-opposite was true — the filters were the only thing keeping the system near
-break-even. Knowing a strategy loses *before* risking capital is the point of
-backtesting; this is a useful, money-saving conclusion, not a failure.
+This is a nuanced, well-earned result: not "the idea is worthless", but "the edge
+existed, weakened over time, and the recoverable part no longer clears trading
+costs." Walk-forward validation is what separated the real improvement from the
+period-specific illusion — and it is exactly why no version of this should be
+traded live as-is.
 
 ## Reproducing
 
