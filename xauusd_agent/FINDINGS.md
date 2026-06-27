@@ -84,6 +84,23 @@ out-of-sample PF is 0.92, still below 1.0. The strategy was profitable in 2012�
 (PF up to 1.48) and decayed to a loss in 2017–2022 — the edge faded over time,
 most likely arbitraged away as these SMC patterns became widely traded.
 
+### 6. Does a higher timeframe help? (4H / daily walk-forward)
+
+Hypothesis: hourly trades too often, so costs dominate; higher timeframes trade
+less. Same in-sample/out-of-sample split, fixed-RR lever.
+
+| Timeframe | In-sample PF | Out-of-sample PF | Trades / half |
+|---|---|---|---|
+| Hourly | up to 1.48 | 0.92 | ~140 |
+| 4H | up to 1.25 | 0.50–0.90 | ~20 |
+| Daily | 0.35 | — | ~6 total |
+
+**Verdict:** higher timeframes do not rescue it. They cut cost drag but collapse the
+trade count to meaningless levels (daily: 6 trades in 5 years), and the same
+out-of-sample decay persists. Hourly is the only timeframe with enough trades to
+evaluate — and it loses out of sample. (Note: daily requires `require_session=False`,
+since kill-zones are meaningless on daily bars and otherwise block every trade.)
+
 ## Conclusion
 
 There was a **real but thin edge** on hourly gold that has **decayed**: profitable
